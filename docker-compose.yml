@@ -1,35 +1,70 @@
 name: Referee-system
 
+# Shared definition for every container that runs the Django code base
+# (API server, celery worker, beat scheduler, flower). They all use the
+# same image, which is built once from ./backend.
+x-backend: &backend
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+  image: ref-sys-image
+  restart: unless-stopped
+  volumes:
+    - "./backend:/app"
+  environment:
+    DJANGO_SETTINGS_MODULE: ref_sys.settings.local
+    # Environment variables take precedence over backend/.env
+    DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+    CELERY_BROKER_URL: redis://redis:6379/0
+    USE_DOCKER: "yes"
+
 services:
   app-backend:
-    build: .
-    image: ref-sys-image
+    <<: *backend
     container_name: ref-sys-container
-    command: /app/entrypoint.sh
+    command: sh /app/entrypoint.sh
     ports:
       - "8000:8000"
-    restart: unless-stopped
-    volumes:
-      - "./backend:/app"
     depends_on:
-      - postgres
-      - redis
-  
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      # Healthy once migrations have run and runserver is listening.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8000/admin/login/"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    develop:
+      watch:
+        - action: rebuild
+          path: ./backend/pyproject.toml
+        - action: rebuild
+          path: ./backend/uv.lock
+
   app-frontend:
-    build: .
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     image: referee-frontend:V0.1-dev
     container_name: referee-frontend-container
     command: npm run dev
     ports:
       - "8080:8080"
     restart: unless-stopped
+    environment:
+      # Used by the browser, so it must be the host-reachable address.
+      VITE_API_URL: http://localhost:8000
     volumes:
       - "./frontend:/app"
+      - /app/node_modules
     depends_on:
       - app-backend
-  
+
   postgres:
-    image: postgres
+    image: postgres:18
     container_name: postgres-container
     ports:
       - "5432:5432"
@@ -38,9 +73,14 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-  
+      - postgres_data:/var/lib/postgresql
+
   redis:
     image: "redis:alpine"
     container_name: redis-container
@@ -51,34 +91,36 @@ services:
       - redis_data:/data
 
   celery:
-    image: ref-sys-image
+    <<: *backend
     container_name: celery-container
-    command: uv run celery -A ref_sys worker -E -l info
-    volumes:
-      - "./backend:/app"
+    command: uv run --no-sync celery -A ref_sys worker -E -l info
     depends_on:
-      - app-backend
-      - postgres
-      - redis
-  
+      app-backend:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  beat:
+    <<: *backend
+    container_name: beat-container
+    command: uv run --no-sync celery -A ref_sys beat -l INFO --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    depends_on:
+      app-backend:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
   flower:
-    image: ref-sys-image
+    <<: *backend
     container_name: flower-container
-    command: uv run celery -A ref_sys flower --basic_auth=admin:admin
+    command: uv run --no-sync celery -A ref_sys flower --basic_auth=admin:admin
     ports:
       - "5555:5555"
     depends_on:
-      - redis
-  
-  beat:
-    image: ref-sys-image
-    container_name: beat-container
-    command: uv run celery -A ref_sys beat -l INFO --scheduler django_celery_beat.schedulers:DatabaseScheduler
-    volumes:
-      - "./backend:/app"
-    depends_on:
-      - redis
-      - app-backend
+      app-backend:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
 volumes:
   postgres_data:

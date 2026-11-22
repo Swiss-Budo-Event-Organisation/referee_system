@@ -1,4 +1,12 @@
-.env
+.editorconfig
+.gitattributes
+.github
+.gitignore
+.pre-commit-config.yaml
+.git
+.envs/
+.venv
+.zed/
 venv/
 **/__pycache__/*
 **/node_modules/*

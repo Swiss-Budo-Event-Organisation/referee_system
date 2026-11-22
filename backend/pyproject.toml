@@ -1,20 +1,24 @@
 [project]
 name = "referee-backend"
-version = "0.1.0"
+version = "0.1.1"
 description = "Django backend for a referee registration system."
 readme = "README.md"
-requires-python = ">=3.11"
+license = {text ="GPLv3" }
+authors = [
+    { name = "Florian Koch", email = "flkoch@dev.fkoch.ch" },
+]
+requires-python = ">=3.13"
 dependencies = [
+    "argon2-cffi>=23.1.0",
     "django>=5.2",
     "django-celery-beat>=2.8.0",
     "django-celery-results>=2.6.0",
     "django-cors-headers>=4.7.0",
     "django-environ>=0.12.0",
     "djangorestframework-simplejwt>=5.5.0",
-    "flower>=2.0.1",
+    "flower>=2.2.0",
     "psycopg2-binary>=2.9.10",
-    "python-environ>=0.4.54",
-    "redis>=6.0.0",
+    "redis>=8.1.0",
 ]
 [tool.ruff]
 exclude = [
@@ -49,9 +53,10 @@ line-length = 88
 indent-width = 4
 
 [tool.ruff.lint]
-extend-select = ["E", "F", "I", "DJ"]
-ignore = []
+select = ["B", "E", "F", "I", "DJ", "UP", "RUF"]
+ignore = ["RUF012"]
 fixable = ["ALL"]
+isort.force-single-line = true
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.format]
@@ -62,5 +67,8 @@ docstring-code-format = true
 
 [dependency-groups]
 dev = [
+    "django-debug-toolbar>=8.0.0",
+    "django-stubs~=5.2",
     "pre-commit>=4.2.0",
+    "ty>=0.0.84",
 ]

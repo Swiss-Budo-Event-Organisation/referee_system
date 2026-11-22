@@ -2,6 +2,7 @@
 .vscode/*
 !.vscode/extensions.json
 *.code-workspace
+.zed/*
 .devcontainer
 db.sqlite3
 **/__pycache__/*
