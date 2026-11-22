@@ -142,7 +142,9 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-gb"
 
-TIME_ZONE = "CET"
+# A canonical IANA name: legacy aliases such as "CET" are missing from
+# newer Linux tzdata (e.g. Ubuntu 26.04), and Django rejects them there.
+TIME_ZONE = "Europe/Zurich"
 
 USE_I18N = False
 
