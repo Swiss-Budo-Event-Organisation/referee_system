@@ -1,6 +1,9 @@
 from rest_framework import serializers
 
-from referee.models import Examination, Referee, RefereeLicense, RefereeRole
+from referee.models import Examination
+from referee.models import Referee
+from referee.models import RefereeLicense
+from referee.models import RefereeRole
 
 
 class ExaminationSerializer(serializers.ModelSerializer):

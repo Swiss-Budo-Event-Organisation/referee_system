@@ -6,7 +6,7 @@ def _list_items_as_string(*args):
     """
     Helper function returning a list of strings from *args
     """
-    return [str(item) for item in args if item is not None]
+    return [str(item) for item in args if item is not None and str(item) != ""]
 
 
 class Address(models.Model):

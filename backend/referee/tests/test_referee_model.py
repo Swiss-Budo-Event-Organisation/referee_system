@@ -2,7 +2,9 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
 
-from referee.models import Examination, Referee, RefereeLicense
+from referee.models import Examination
+from referee.models import Referee
+from referee.models import RefereeLicense
 
 # Create your tests here.
 

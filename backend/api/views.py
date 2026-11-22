@@ -1,35 +1,68 @@
 from django.contrib.auth.models import User
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics
-from rest_framework.exceptions import MethodNotAllowed, PermissionDenied
-from rest_framework.permissions import (
-    AllowAny,
-    DjangoModelPermissions,
-    IsAuthenticated,
-)
+from rest_framework.exceptions import MethodNotAllowed
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import SAFE_METHODS
+from rest_framework.permissions import AllowAny
+from rest_framework.permissions import DjangoModelPermissions
+from rest_framework.permissions import IsAuthenticated
 
-from api.serializers import UserCreateSerializer, UserSerializer
-from competition.models import (
-    Accommodation,
-    Application,
-    Competition,
-    CompetitionCategory,
-    Event,
-    Invitation,
-)
-from competition.serializers import (
-    AccommodationSerializer,
-    ApplicationSerializer,
-    CompetitionCategorySerializer,
-    CompetitionOverviewSerializer,
-    CompetitionSerializer,
-    EventSerializer,
-    InvitationSerializer,
-)
-from helper.models import Address, Location
-from helper.serializers import AddressSerializer, LocationSerializer
-from referee.models import Examination, RefereeLicense
-from referee.serializers import ExaminationSerializer, RefereeLicenseSerializer
+from api.serializers import UserCreateSerializer
+from api.serializers import UserSerializer
+from competition.models import Accommodation
+from competition.models import Application
+from competition.models import Competition
+from competition.models import CompetitionCategory
+from competition.models import Event
+from competition.models import Invitation
+from competition.permissions import can_assign_categories
+from competition.permissions import can_manage_competition
+from competition.permissions import managed_applications
+from competition.permissions import observed_competitions
+from competition.serializers import AccommodationSerializer
+from competition.serializers import ApplicationSerializer
+from competition.serializers import CompetitionCategorySerializer
+from competition.serializers import CompetitionOverviewSerializer
+from competition.serializers import CompetitionSerializer
+from competition.serializers import EventSerializer
+from competition.serializers import InvitationSerializer
+from competition.serializers import OwnApplicationSerializer
+from helper.models import Address
+from helper.models import Location
+from helper.serializers import AddressSerializer
+from helper.serializers import LocationSerializer
+from referee.models import Examination
+from referee.models import RefereeLicense
+from referee.permissions import can_examine
+from referee.serializers import ExaminationSerializer
+from referee.serializers import RefereeLicenseSerializer
+
+
+class CompetitionPermission(DjangoModelPermissions):
+    """
+    Model permissions plus the category check: changing or deleting a
+    competition requires administering one of its categories.
+    """
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in SAFE_METHODS:
+            return True
+        return can_manage_competition(request.user, obj)
+
+
+def _check_categories(user, categories, current=()):
+    if categories is not None and not can_assign_categories(user, categories, current):
+        raise PermissionDenied(detail="You may only assign categories you administer.")
+
+
+def _keep_fixed_fields(serializer, instance, *fields):
+    for field in fields:
+        value = serializer.validated_data.get(field, getattr(instance, field))
+        if value != getattr(instance, field):
+            raise ValidationError({field: "This field cannot be changed."})
 
 
 class CreateUserView(generics.CreateAPIView):
@@ -82,13 +115,47 @@ class DetailEventView(generics.RetrieveUpdateDestroyAPIView):
 class CreateCompetitionView(generics.CreateAPIView):
     queryset = Competition.objects.all()
     serializer_class = CompetitionSerializer
-    permission_classes = [DjangoModelPermissions]
+    permission_classes = [CompetitionPermission]
+
+    def perform_create(self, serializer):
+        _check_categories(
+            self.request.user, serializer.validated_data.get("category", [])
+        )
+        serializer.save()
 
 
-class DetailCompetitionView(generics.RetrieveAPIView):
+class DetailCompetitionView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Competition.objects.all()
-    serializer_class = CompetitionOverviewSerializer
-    permission_classes = [DjangoModelPermissions]
+    permission_classes = [CompetitionPermission]
+
+    def get_serializer_class(self):
+        if self.request.method in SAFE_METHODS:
+            return CompetitionOverviewSerializer
+        return CompetitionSerializer
+
+    def perform_update(self, serializer):
+        _check_categories(
+            self.request.user,
+            serializer.validated_data.get("category"),
+            serializer.instance.category.all(),
+        )
+        serializer.save()
+
+
+class CompetitionApplicationsView(generics.ListAPIView):
+    """
+    Applications of one competition, for admins and observers of one of its
+    categories.
+    """
+
+    serializer_class = ApplicationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        competition = get_object_or_404(
+            observed_competitions(self.request.user), pk=self.kwargs["pk"]
+        )
+        return competition.applications.all()
 
 
 class CreateCompetitionCategoryView(generics.CreateAPIView):
@@ -104,7 +171,7 @@ class CreateAccommodationView(generics.CreateAPIView):
 
 
 class CreateListApplicationView(generics.ListCreateAPIView):
-    serializer_class = ApplicationSerializer
+    serializer_class = OwnApplicationSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
@@ -120,6 +187,39 @@ class CreateListApplicationView(generics.ListCreateAPIView):
             serializer.save(user=self.request.user.referee)
         else:
             print(serializer.errors)
+
+
+class DetailOwnApplicationView(generics.RetrieveUpdateAPIView):
+    """
+    Every referee may view and change their own applications.
+    """
+
+    serializer_class = OwnApplicationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Application.objects.filter(user=self.request.user.referee)
+
+    def perform_update(self, serializer):
+        _keep_fixed_fields(serializer, serializer.instance, "user", "competition")
+        serializer.save()
+
+
+class ManageApplicationView(generics.RetrieveUpdateAPIView):
+    """
+    Competition admins may change applications (e.g. status and role) of
+    competitions in the categories they administer.
+    """
+
+    serializer_class = ApplicationSerializer
+    permission_classes = [DjangoModelPermissions]
+
+    def get_queryset(self):
+        return managed_applications(self.request.user)
+
+    def perform_update(self, serializer):
+        _keep_fixed_fields(serializer, serializer.instance, "user", "competition")
+        serializer.save()
 
 
 class DeleteApplicationView(generics.DestroyAPIView):
@@ -144,6 +244,16 @@ class CreateInvitationView(generics.CreateAPIView):
     queryset = Invitation.objects.all()
     serializer_class = InvitationSerializer
     permission_classes = [DjangoModelPermissions]
+
+    def perform_create(self, serializer):
+        competition = serializer.validated_data.get("competition")
+        if competition is None or not can_manage_competition(
+            self.request.user, competition
+        ):
+            raise PermissionDenied(
+                detail="You may only invite for competitions you administer."
+            )
+        serializer.save()
 
 
 class UpdateAddressView(generics.RetrieveUpdateAPIView):
@@ -176,10 +286,39 @@ class DetailLocationView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated]
 
 
-class ListLicenseView(generics.ListAPIView):
+class ListLicenseView(generics.ListCreateAPIView):
+    """
+    Everyone may list licenses; creating requires the add permission, which
+    only the National Admin group has.
+    """
+
     queryset = RefereeLicense.objects.all()
     serializer_class = RefereeLicenseSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [DjangoModelPermissions]
+
+
+class DetailLicenseView(generics.RetrieveUpdateAPIView):
+    queryset = RefereeLicense.objects.all()
+    serializer_class = RefereeLicenseSerializer
+    permission_classes = [DjangoModelPermissions]
+
+
+class CreateExaminationView(generics.CreateAPIView):
+    """
+    Examiners may record examinations for the licenses of their examiner
+    group.
+    """
+
+    queryset = Examination.objects.all()
+    serializer_class = ExaminationSerializer
+    permission_classes = [DjangoModelPermissions]
+
+    def perform_create(self, serializer):
+        if not can_examine(self.request.user, serializer.validated_data["license"]):
+            raise PermissionDenied(
+                detail="You may not record examinations for this license."
+            )
+        serializer.save()
 
 
 class ListExaminationsView(generics.ListAPIView):

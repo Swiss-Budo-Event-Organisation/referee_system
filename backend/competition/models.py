@@ -1,6 +1,8 @@
+from django.contrib.auth.models import Group
 from django.contrib.auth.models import User
 from django.core import mail
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import MaxValueValidator
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
@@ -9,8 +11,12 @@ from django.utils import timezone
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
-from helper.models import Address, Category, Location
-from referee.models import Referee, RefereeLicense, RefereeRole
+from helper.models import Address
+from helper.models import Category
+from helper.models import Location
+from referee.models import Referee
+from referee.models import RefereeLicense
+from referee.models import RefereeRole
 
 from .tasks import send_mails
 
@@ -23,6 +29,29 @@ def _prepare_mail(*args, **kwargs):
 
 
 class CompetitionCategory(Category):
+    """
+    Category of a competition. Members of the `admins` group manage
+    competitions of this category; members of the `observers` group may view
+    them and their applications.
+    """
+
+    admins = models.ForeignKey(
+        Group,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="administered_categories",
+        verbose_name=_("Admin group"),
+    )
+    observers = models.ForeignKey(
+        Group,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="observed_categories",
+        verbose_name=_("Observer group"),
+    )
+
     class Meta:
         verbose_name = _("Competition CAtegory")
         verbose_name_plural = _("Competition Categories")
@@ -67,9 +96,7 @@ class Event(models.Model):
 
     @classmethod
     def create(cls, name: str, start: timezone.datetime, **kwargs):
-        slug = slugify(name)
-        if "slug" in kwargs:
-            slug = kwargs["slug"]
+        slug = kwargs.pop("slug", None) or slugify(name)
         qs = Event.objects.filter(slug=slug).filter(start__year=start.year)
         if qs.count() > 0:
             slug += f"-{qs.count()}"

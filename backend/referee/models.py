@@ -1,9 +1,12 @@
+from django.contrib.auth.models import Group
 from django.contrib.auth.models import User
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import MaxValueValidator
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils.translation import gettext as _
 
-from helper.models import Address, Category
+from helper.models import Address
+from helper.models import Category
 
 
 class RefereeLicense(Category):
@@ -16,6 +19,15 @@ class RefereeLicense(Category):
         null=True,
         blank=True,
         verbose_name=_("next higher license"),
+    )
+    examiners = models.ForeignKey(
+        Group,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="examined_licenses",
+        verbose_name=_("Examiner group"),
+        help_text=_("Members of this group may record examinations for this license."),
     )
 
     class Meta:
