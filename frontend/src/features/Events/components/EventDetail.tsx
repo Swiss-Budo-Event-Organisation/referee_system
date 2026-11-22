@@ -6,24 +6,22 @@ import { CompetitionType } from "../../../lib/types";
 import LoadingIndicator from "../../../components/LoadingIndicator";
 import { useEventQuery } from "../hooks/useEventsQueries";
 
+function Structure({ count, children }: { count: number, children: ReactNode }) {
+    if (count < 2) {
+        return children
+    }
+    return (
+        <Container className="px-0 mt-2">
+            <Row xs={1} lg={2} className="g-2">
+                {children}
+            </Row>
+        </Container>
+    )
+}
+
 function EventDetailRender({ pk }: { pk: number }) {
     const eventQuery = useEventQuery(pk)
 
-    function Structure({ children }: { children: ReactNode }) {
-        if (eventQuery.data.competitions == undefined || eventQuery.data.competitions == null) {
-            return children
-        }
-        if (eventQuery.data.competitions.length < 2) {
-            return children
-        }
-        return (
-            <Container className="px-0 mt-2">
-                <Row xs={1} lg={2} className="g-2">
-                    {children}
-                </Row>
-            </Container>
-        )
-    }
     if (eventQuery.isLoading) return <LoadingIndicator size="15rem" />;
     return (
         <>
@@ -31,7 +29,7 @@ function EventDetailRender({ pk }: { pk: number }) {
             <LocationAddress location={eventQuery.data.location}>
                 &nbsp;&ndash;&nbsp;
             </LocationAddress>
-            <Structure>
+            <Structure count={eventQuery.data.competitions?.length ?? 0}>
                 {eventQuery.data.competitions?.map((elem: CompetitionType) => {
                     return <CompetitionDetail competition={elem} key={elem.id} />
                 })}
