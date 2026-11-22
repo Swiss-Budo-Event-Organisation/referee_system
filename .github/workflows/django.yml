@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: ["main"]
 
-env:
-  ENV_PATH: .env.test
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,5 +25,15 @@ jobs:
         working-directory: ./backend
         run: uv sync --locked --all-extras --dev
       - name: Run Tests
+        # manage.py test uses ref_sys.settings.test (SQLite, no services).
         working-directory: ./backend
         run: uv run manage.py test
+
+  production-images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build production images
+        run: |
+          cp .env.prod.example .env.prod
+          docker compose -f docker-compose.production.yml build

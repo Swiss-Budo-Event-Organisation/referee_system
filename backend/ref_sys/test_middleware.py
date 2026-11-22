@@ -44,15 +44,23 @@ class TestMiddleware(APITestCase):
 
 
 class TestSettings(TestCase):
-    def test_local_settings_enable_debug_toolbar(self):
-        self.assertIn("debug_toolbar", settings.INSTALLED_APPS)
-        self.assertEqual(reverse("djdt:render_panel"), "/__debug__/render_panel/")
+    def test_test_settings_are_used(self):
+        self.assertEqual(settings.SETTINGS_MODULE, "ref_sys.settings.test")
+        self.assertEqual(
+            settings.DATABASES["default"]["ENGINE"], "django.db.backends.sqlite3"
+        )
+        self.assertEqual(
+            settings.EMAIL_BACKEND, "django.core.mail.backends.locmem.EmailBackend"
+        )
+        self.assertTrue(settings.CELERY_TASK_ALWAYS_EAGER)
 
     def test_time_zone_and_hashers(self):
+        from ref_sys.settings import base
+
         self.assertEqual(settings.TIME_ZONE, "CET")
         self.assertTrue(settings.USE_TZ)
         self.assertEqual(
-            settings.PASSWORD_HASHERS[0],
+            base.PASSWORD_HASHERS[0],
             "django.contrib.auth.hashers.Argon2PasswordHasher",
         )
 

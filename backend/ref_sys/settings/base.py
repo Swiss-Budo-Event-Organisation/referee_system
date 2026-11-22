@@ -12,11 +12,8 @@ env = environ.Env()
 env.read_env(str(BASE_DIR / env.str("ENV_PATH", ".env")))
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env("SECRET_KEY")
+# Shared settings. SECRET_KEY and DATABASES are set per environment in
+# local.py, test.py and production.py.
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool("DEBUG", default=False)
@@ -89,11 +86,13 @@ WSGI_APPLICATION = "ref_sys.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-if os.getenv("DATABASE_URL", default=None):
-    DATABASES = {"default": env.db("DATABASE_URL")}
-else:
-    DATABASES = {
-        "default": {
+
+def database_config():
+    """DATABASE_URL if set, otherwise the POSTGRES_* variables."""
+    if os.getenv("DATABASE_URL"):
+        database = env.db("DATABASE_URL")
+    else:
+        database = {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": env.str("POSTGRES_DB"),
             "USER": env.str("POSTGRES_USER"),
@@ -101,8 +100,10 @@ else:
             "HOST": env.str("POSTGRES_HOST", default="postgres"),
             "PORT": env.str("POSTGRES_PORT", default="5432"),
         }
-    }
-DATABASES["default"]["ATOMIC_REQUESTS"] = True
+    database["ATOMIC_REQUESTS"] = True
+    return {"default": database}
+
+
 # Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -186,7 +187,10 @@ MEDIA_URL = "/media/"
 
 # E-mail configuration
 
+# EMAIL is a URL such as consolemail:// or smtp+tls://user:pass@host:587.
+# env.email() returns EMAIL_BACKEND, EMAIL_HOST, ... which are set here.
 EMAIL_CONFIG = env.email("EMAIL", default="consolemail://")
+vars().update(EMAIL_CONFIG)
 
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWS_CREDENTIALS = True

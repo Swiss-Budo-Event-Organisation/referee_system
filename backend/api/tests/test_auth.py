@@ -1,3 +1,5 @@
+from django.contrib.auth.hashers import get_hasher
+from django.contrib.auth.hashers import identify_hasher
 from django.contrib.auth.models import User
 from django.urls import reverse
 from rest_framework import status
@@ -19,7 +21,10 @@ class TestRegistration(APITestCase):
         self.assertNotIn("password", response.data)
         user = User.objects.get(username="newbie")
         self.assertTrue(user.check_password("s3cret-Pa55word"))
-        self.assertTrue(user.password.startswith("argon2"))
+        # Hashed with the first configured hasher (MD5 in tests, else Argon2).
+        self.assertEqual(
+            identify_hasher(user.password).algorithm, get_hasher().algorithm
+        )
         self.assertIsNotNone(user.referee)
 
     def test_register_rejects_duplicate_username(self):

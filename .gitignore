@@ -8,7 +8,9 @@ db.sqlite3
 **/__pycache__/*
 .venv
 .env
+.env.prod
 dev.env
+.env.prod
 
 # Logs
 logs
