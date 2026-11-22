@@ -1,7 +1,8 @@
 from django.contrib.auth.models import User
 from django.test import TestCase
 
-from referee.models import Examination, RefereeLicense
+from referee.models import Examination
+from referee.models import RefereeLicense
 
 
 class TestExamination(TestCase):

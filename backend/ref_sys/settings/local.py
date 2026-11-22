@@ -41,7 +41,6 @@ CELERY_TASK_EAGER_PROPAGATES = True
 
 # Password validation
 
-AUTH_PASSWORD_VALIDATORS = [
-]
+AUTH_PASSWORD_VALIDATORS = []
 
 EMAIL_CONFIG = env.email("EMAIL", default="consolemail://")
