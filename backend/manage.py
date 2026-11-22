@@ -7,7 +7,12 @@ import sys
 
 def main():
     """Run administrative tasks."""
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "ref_sys.settings.local")
+    if sys.argv[1:2] == ["test"]:
+        # Tests always use the test settings (SQLite, no real mail), even
+        # inside the local containers. Pass --settings to override.
+        os.environ["DJANGO_SETTINGS_MODULE"] = "ref_sys.settings.test"
+    else:
+        os.environ.setdefault("DJANGO_SETTINGS_MODULE", "ref_sys.settings.local")
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:

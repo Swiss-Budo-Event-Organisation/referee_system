@@ -1,6 +1,7 @@
 from .base import *  # noqa: F403
 from .base import INSTALLED_APPS
 from .base import MIDDLEWARE
+from .base import database_config
 from .base import env
 
 # SECURITY WARNING: keep the secret key used in production secret!
@@ -13,6 +14,8 @@ SECRET_KEY = env(
 DEBUG = True
 
 ALLOWED_HOSTS = ["localhost", "0.0.0.0", "127.0.0.1"]
+
+DATABASES = database_config()
 
 
 INSTALLED_APPS += ["debug_toolbar"]
@@ -42,5 +45,3 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # Password validation
 
 AUTH_PASSWORD_VALIDATORS = []
-
-EMAIL_CONFIG = env.email("EMAIL", default="consolemail://")

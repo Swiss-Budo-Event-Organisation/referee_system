@@ -1,0 +1,29 @@
+# DOMAIN comes from .env.prod. Caddy gets and renews the HTTPS certificate
+# for it automatically and redirects HTTP to HTTPS.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# "?" only sets a header when the response has none yet, so Django's
+	# own headers win for /api and /admin.
+	header {
+		?X-Content-Type-Options nosniff
+		?X-Frame-Options DENY
+		?Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	@django path /api/* /admin /admin/* /static/*
+	handle @django {
+		reverse_proxy django:8000
+	}
+
+	# Everything else is the React app. Unknown paths get index.html, so
+	# client-side routes such as /events/2 also work on reload.
+	handle {
+		root * /srv
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} /index.html
+		file_server
+	}
+}

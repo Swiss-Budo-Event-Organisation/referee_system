@@ -1,0 +1,100 @@
+# Production stack. All settings are read from .env.prod:
+#   docker compose -f docker-compose.production.yml up -d --build
+name: referee-system-production
+
+x-django: &django
+  build:
+    context: ./backend
+    dockerfile: ../compose/production/django/Dockerfile
+  image: referee-system-production-django
+  restart: unless-stopped
+  env_file: .env.prod
+  environment:
+    CELERY_BROKER_URL: redis://redis:6379/0
+  depends_on: &django-depends-on
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_started
+
+services:
+  # Runs the migrations once, then exits. The other services wait for it.
+  migrate:
+    <<: *django
+    command: python manage.py migrate --noinput
+    restart: "no"
+
+  django:
+    <<: *django
+    depends_on:
+      <<: *django-depends-on
+      migrate:
+        condition: service_completed_successfully
+
+  celeryworker:
+    <<: *django
+    command: celery -A ref_sys worker -l INFO
+    depends_on:
+      <<: *django-depends-on
+      migrate:
+        condition: service_completed_successfully
+
+  celerybeat:
+    <<: *django
+    command: celery -A ref_sys beat -l INFO --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    depends_on:
+      <<: *django-depends-on
+      migrate:
+        condition: service_completed_successfully
+
+  # Not routed through Caddy. Only started with --profile flower, and only
+  # reachable from the server itself (e.g. through an SSH tunnel).
+  flower:
+    <<: *django
+    command: celery -A ref_sys flower
+    profiles: [flower]
+    ports:
+      - "127.0.0.1:5555:5555"
+
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    env_file: .env.prod
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+  caddy:
+    build:
+      context: ./frontend
+      dockerfile: ../compose/production/caddy/Dockerfile
+      additional_contexts:
+        caddy: ./compose/production/caddy
+    image: referee-system-production-caddy
+    restart: unless-stopped
+    env_file: .env.prod
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - django
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

@@ -8,4 +8,3 @@ export async function getAddress(pk: number, signal: AbortSignal) {
 export async function getLicenses(signal: AbortSignal) {
     return getRequest("api/licenses/", signal);
 }
-

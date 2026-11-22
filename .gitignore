@@ -8,7 +8,9 @@ db.sqlite3
 **/__pycache__/*
 .venv
 .env
+.env.prod
 dev.env
+.env.prod
 
 # Logs
 logs
@@ -22,7 +24,6 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-package-lock.json
 *.local
 
 # Editor directories and files
