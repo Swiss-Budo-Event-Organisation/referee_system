@@ -1,49 +1,15 @@
 # Referee System
 
 > [!WARNING]
-> **Work in progress.** This project is under active development and not yet stable. Breaking changes can happen at any time, without prior notice: to the API, the data model and migrations, the settings and environment variables, and the deployment setup. Pin a specific commit if you depend on it, and expect to adapt when you update.
+> **Work in progress.** This project is under active development and not yet stable. Features, structure and setup can change at any time, including breaking changes, without prior notice.
 
-A web application for organising referees at budo (judo) events. Organisers publish events and competitions, referees apply for them, and admins review applications, send invitations and keep track of referee licenses and examinations.
+A web application for organising referees at budo (judo) events. Referees apply for events, and organisers manage applications, invitations and referee qualifications.
 
-## Features
-
-- **Events and competitions:** organisers publish events with one or more competitions, each with its categories, required referee level and application period.
-- **Applications:** referees apply for competitions, including accommodation, and admins decide on them.
-- **Invitations:** selected applicants are invited by email.
-- **Licenses and examinations:** referee licenses and the examinations leading to them are recorded.
-- **Permissions:** admins, observers and examiners only see and manage what belongs to their area.
-
-Features may still be incomplete or change; see the note above.
-
-## Architecture
-
-| Part | Technology |
-|---|---|
-| Backend | Django 6, Django REST Framework, JWT authentication (Simple JWT) |
-| Background tasks | Celery with Redis (planned for sending emails and scheduled jobs; not fully in use yet) |
-| Database | PostgreSQL 18 (SQLite in tests) |
-| Frontend | React 19, TypeScript, Vite, React Bootstrap, TanStack Query |
-| Production | Gunicorn, WhiteNoise, Caddy (automatic HTTPS) |
-
-```
-backend/            Django project
-  ref_sys/          project package: settings, URLs, Celery app
-    settings/       base.py, local.py, test.py, production.py
-  api/              REST API (views, serializers, URLs under /api/)
-  competition/      events, competitions, applications, invitations
-  referee/          referees, licenses, examinations, roles
-  helper/           addresses, locations, shared category model
-frontend/           React app
-  src/pages/        top-level pages (events, event detail, profile, login, register)
-  src/features/     feature code: Events, User
-compose/production/ production Dockerfiles and Caddyfile
-```
-
-In production, Caddy serves the built frontend and forwards `/api/`, `/admin/` and `/static/` to Django, so the frontend and API share one domain.
+The project consists of a Django backend with a REST API and a React frontend. Everything runs in Docker containers.
 
 ## Getting started
 
-You need [Docker](https://docs.docker.com/get-docker/) with Compose. For working on the backend outside the containers, also install [uv](https://docs.astral.sh/uv/).
+You only need [Docker](https://docs.docker.com/get-docker/) with Compose.
 
 ```sh
 git clone https://github.com/Swiss-Budo-Event-Organisation/referee_system.git
@@ -51,93 +17,58 @@ cd referee_system
 docker compose up --build
 ```
 
-This starts the development stack:
+This starts the development stack with all the services it needs. Once it is running:
 
-| Service | URL |
+| What | Where |
 |---|---|
-| Frontend (Vite dev server, hot reload) | http://localhost:8080 |
+| Web app | http://localhost:8080 |
 | API | http://localhost:8000/api/ |
-| Django admin | http://localhost:8000/admin/ |
-| Flower (Celery monitoring, login `admin` / `admin`) | http://localhost:5555 |
-| PostgreSQL | `localhost:5432`, user, password and database `postgres` |
-| Redis | `localhost:6379` |
+| Admin interface | http://localhost:8000/admin/ |
 
-Migrations run automatically when the backend container starts. To create an admin user:
+The database is set up automatically on startup. To log in, create an admin user:
 
 ```sh
 docker compose exec app-backend uv run --no-sync manage.py createsuperuser
 ```
 
-The `backend/` and `frontend/` folders are mounted into the containers, so code changes take effect immediately. Rebuild after changing dependencies (`pyproject.toml`, `uv.lock` or `package.json`):
+Code changes in `backend/` and `frontend/` take effect without restarting. After changing dependencies, rebuild with:
 
 ```sh
 docker compose up --build -V
 ```
 
-`-V` recreates the frontend's `node_modules` volume so new packages are picked up.
+To stop the stack, run `docker compose down`. Add `-v` to also delete the development data.
 
 ## Running the tests
 
-**Backend.** The tests use `ref_sys.settings.test`: an in-memory SQLite database, emails kept in memory and Celery tasks run immediately. They need neither Docker nor an `.env` file.
+With the development stack running:
 
 ```sh
-cd backend
-uv sync
-uv run manage.py test
+docker compose exec app-backend uv run --no-sync manage.py test   # backend
+docker compose exec app-frontend npm test                          # frontend
 ```
 
-Inside the container: `docker compose exec app-backend uv run --no-sync manage.py test`. To run the tests against PostgreSQL instead, add `--settings=ref_sys.settings.local`.
-
-**Frontend.** The frontend uses Vitest and Testing Library:
-
-```sh
-docker compose exec app-frontend npm test
-```
-
-With Node.js 24 installed locally, `npm ci && npm test` in `frontend/` works as well.
-
-## Settings and environments
-
-| Module | Used for | Notes |
-|---|---|---|
-| `ref_sys.settings.local` | development (default) | `DEBUG` on, debug toolbar, emails printed to the console |
-| `ref_sys.settings.test` | `manage.py test` (selected automatically) | SQLite, fast password hashing, no external services |
-| `ref_sys.settings.production` | the production stack | every value read from `.env.prod`; refuses to start if one is missing |
-
-Settings are read from environment variables. Outside Docker, `backend/.env` is loaded too; `backend/.env.example` shows the optional variables for local work. Outgoing email is configured with a single URL in `EMAIL`, for example `consolemail://` or `smtp+tls://user:password@smtp.example.ch:587`.
+The backend tests use their own temporary database, so they don't touch your development data. They can also run without Docker; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Deployment
 
-The production stack in `docker-compose.production.yml` runs:
+A separate production setup is included and serves the app over HTTPS.
 
-- Django on Gunicorn, as a non-root user;
-- a one-off `migrate` service that the other services wait for;
-- the Celery worker and beat;
-- PostgreSQL and Redis, which have no published ports;
-- Caddy on ports 80 and 443, which gets and renews the HTTPS certificate automatically.
-
-1. On the server, point the domain's DNS at the server and open ports 80 and 443.
-2. Create the settings file and fill in every value:
+1. Copy the settings template and fill in every value:
    ```sh
    cp .env.prod.example .env.prod
    ```
-   `.env.prod` is gitignored. Never commit it.
-3. Build and start:
+   `.env.prod` contains secrets and is never committed.
+2. Build and start:
    ```sh
    docker compose -f docker-compose.production.yml up -d --build
    ```
-4. Create an admin user:
-   ```sh
-   docker compose -f docker-compose.production.yml exec django python manage.py createsuperuser
-   ```
 
-To update, pull the new code and run step 3 again; migrations run automatically.
-
-Flower is not reachable through Caddy. Start it with `--profile flower`; it then listens on `127.0.0.1:5555` on the server only, for example through an SSH tunnel. `SECURE_HSTS_SECONDS` defaults to 60 seconds; raise it once HTTPS works on the real domain.
+The comments in `.env.prod.example` and `docker-compose.production.yml` give the details.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
