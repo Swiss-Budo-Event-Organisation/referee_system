@@ -6,7 +6,7 @@ Settings for the test suite: fast, self-contained and with no outside services.
 
 from .base import *  # noqa: F403
 
-SECRET_KEY = "test-only-insecure-secret-key"
+SECRET_KEY = "test-only-insecure-secret-key-not-for-real-use"
 
 DEBUG = False
 
