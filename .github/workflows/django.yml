@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.4.0 # no moving v10 tag is published
         with:
           version: "0.13.9"
           python-version: "3.13"
@@ -47,7 +47,7 @@ jobs:
     continue-on-error: ${{ matrix.experimental }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.4.0 # no moving v10 tag is published
         with:
           version: "0.13.9"
           python-version: ${{ matrix.python-version }}
