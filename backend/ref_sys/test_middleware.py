@@ -57,7 +57,7 @@ class TestSettings(TestCase):
     def test_time_zone_and_hashers(self):
         from ref_sys.settings import base
 
-        self.assertEqual(settings.TIME_ZONE, "CET")
+        self.assertEqual(settings.TIME_ZONE, "Europe/Zurich")
         self.assertTrue(settings.USE_TZ)
         self.assertEqual(
             base.PASSWORD_HASHERS[0],
