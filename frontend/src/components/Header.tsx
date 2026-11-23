@@ -15,6 +15,9 @@ export function Header() {
                         <Nav.Link href="/events">Events</Nav.Link>
                     </Nav>
                     <Nav>
+                        <Nav.Link href="/events/new">New Event</Nav.Link>
+                    </Nav>
+                    <Nav>
                         <Nav.Link href="/profile">Profile</Nav.Link>
                     </Nav>
                     <Nav>

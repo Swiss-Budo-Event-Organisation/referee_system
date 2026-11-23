@@ -239,6 +239,47 @@ class TestApplications(AuthenticatedTestCase):
         self.assertEqual(application.user, self.user.referee)
         self.assertEqual(application.status, Application.Status.APPLIED)
 
+    def test_apply_without_registration_dates(self):
+        self.competition.application_open = None
+        self.competition.application_close = None
+        self.competition.save()
+
+        response = self.client.post(
+            reverse("application-create-list"),
+            {"user": self.user.referee.pk, "competition": self.competition.pk},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_cannot_apply_outside_registration(self):
+        now = timezone.now()
+        cases = {
+            "not yet open": {"application_open": now + timedelta(days=1)},
+            "closed": {"application_close": now - timedelta(minutes=1)},
+            "switched off": {"application": False},
+            "started": {
+                "application_close": None,
+                "start": now - timedelta(hours=1),
+            },
+        }
+        for name, fields in cases.items():
+            with self.subTest(name):
+                competition = make_competition(self.event, self.user.referee, **fields)
+
+                response = self.client.post(
+                    reverse("application-create-list"),
+                    {"user": self.user.referee.pk, "competition": competition.pk},
+                    format="json",
+                )
+
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(
+                    response.data["competition"],
+                    ["Registration for this competition is closed."],
+                )
+        self.assertFalse(Application.objects.exists())
+
     def test_cannot_apply_for_someone_else(self):
         other = make_user("jane")
         response = self.client.post(

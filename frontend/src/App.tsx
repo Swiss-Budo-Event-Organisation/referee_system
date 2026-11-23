@@ -4,6 +4,7 @@ import LoadingIndicator from "./components/LoadingIndicator";
 import { UserContext } from "./layouts/MainLayout";
 
 const EventOverview = lazy(() => import("./pages/EventOverview"));
+const EventCreate = lazy(() => import("./pages/EventCreate"));
 const EventDetail = lazy(() => import("./pages/EventDetail"));
 const Login = lazy(() => import("./pages/Login"));
 const MainLayout = lazy(() => import("./layouts/MainLayout"));
@@ -35,6 +36,13 @@ function App() {
           <Suspense fallback={<LoadingIndicator size="15rem" />}>
             <ProtectedRoute>
               <EventOverview />
+            </ProtectedRoute>
+          </Suspense>
+        } />
+        <Route path="events/new" element={
+          <Suspense fallback={<LoadingIndicator size="15rem" />}>
+            <ProtectedRoute>
+              <EventCreate />
             </ProtectedRoute>
           </Suspense>
         } />

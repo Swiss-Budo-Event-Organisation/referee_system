@@ -27,6 +27,7 @@ from competition.serializers import ApplicationSerializer
 from competition.serializers import CompetitionCategorySerializer
 from competition.serializers import CompetitionOverviewSerializer
 from competition.serializers import CompetitionSerializer
+from competition.serializers import EventCreateSerializer
 from competition.serializers import EventSerializer
 from competition.serializers import InvitationSerializer
 from competition.serializers import OwnApplicationSerializer
@@ -35,10 +36,12 @@ from helper.models import Location
 from helper.serializers import AddressSerializer
 from helper.serializers import LocationSerializer
 from referee.models import Examination
+from referee.models import Referee
 from referee.models import RefereeLicense
 from referee.permissions import can_examine
 from referee.serializers import ExaminationSerializer
 from referee.serializers import RefereeLicenseSerializer
+from referee.serializers import RefereeOptionSerializer
 
 
 class CompetitionPermission(DjangoModelPermissions):
@@ -92,6 +95,22 @@ class CreateEventView(generics.CreateAPIView):
     queryset = Event.objects.all()
     serializer_class = EventSerializer
     permission_classes = [DjangoModelPermissions]
+
+
+class CreateEventWithCompetitionsView(generics.CreateAPIView):
+    """
+    Create an event together with its competitions from a single form.
+
+    Open to every authenticated user for now; permissions are going to be
+    reworked.
+    """
+
+    queryset = Event.objects.all()
+    serializer_class = EventCreateSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(creator=self.request.user)
 
 
 class ListEventsView(generics.ListAPIView):
@@ -158,6 +177,20 @@ class CompetitionApplicationsView(generics.ListAPIView):
         return competition.applications.all()
 
 
+class ListCompetitionCategoriesView(generics.ListAPIView):
+    queryset = CompetitionCategory.objects.all()
+    serializer_class = CompetitionCategorySerializer
+    permission_classes = [IsAuthenticated]
+
+
+class ListRefereesView(generics.ListAPIView):
+    queryset = Referee.objects.select_related("user").order_by(
+        "user__last_name", "user__first_name", "user__username"
+    )
+    serializer_class = RefereeOptionSerializer
+    permission_classes = [IsAuthenticated]
+
+
 class CreateCompetitionCategoryView(generics.CreateAPIView):
     queryset = CompetitionCategory.objects.all()
     serializer_class = CompetitionCategorySerializer
@@ -183,6 +216,10 @@ class CreateListApplicationView(generics.ListCreateAPIView):
             if serializer.validated_data.get("user") != self.request.user.referee:
                 raise PermissionDenied(
                     detail="You are not allowed to apply someone else."
+                )
+            if not serializer.validated_data["competition"].registration_open():
+                raise ValidationError(
+                    {"competition": ["Registration for this competition is closed."]}
                 )
             serializer.save(user=self.request.user.referee)
         else:

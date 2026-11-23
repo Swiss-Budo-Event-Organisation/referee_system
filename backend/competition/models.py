@@ -178,16 +178,32 @@ class Competition(models.Model):
         """
         return f"{self.event.name} ({self.start.date()})"
 
-    def application_allowed(self, user: Referee | None = None) -> bool:
+    @property
+    def registration_closes(self) -> timezone.datetime:
         """
-        Check if application is currently possible.
+        End of the registration period: the closing date if one is set,
+        otherwise the start of the competition.
+        """
+        return self.application_close or self.start
+
+    def registration_open(self) -> bool:
+        """
+        Check if registration is currently open. Without an opening date it is
+        open right away; without a closing date it stays open until the
+        competition starts.
         """
         if not self.application:
             return False
         now = timezone.now()
-        if now < self.application_open:
+        if self.application_open is not None and now < self.application_open:
             return False
-        if now > self.application_close:
+        return now <= self.registration_closes
+
+    def application_allowed(self, user: Referee | None = None) -> bool:
+        """
+        Check if application is currently possible.
+        """
+        if not self.registration_open():
             return False
         if user is None:
             return True

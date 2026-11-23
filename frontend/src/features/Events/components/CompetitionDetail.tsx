@@ -3,11 +3,12 @@ import { type CompetitionType } from "../../../lib/types"
 import { extractDay, license } from "../../../lib/helper";
 import LoadingIndicator from "../../../components/LoadingIndicator";
 import { useLicenseQuery } from "../../../hooks/useQueries";
-import { handleApply } from "../utils/Competition";
+import { handleApply, registrationClosedReason } from "../utils/Competition";
 import ListGroupItemIfLargerNumber from "./ListGroupItem";
 
 function CompetitionDetail({ competition }: { competition: CompetitionType }) {
     const licenseQuery = useLicenseQuery()
+    const closedReason = registrationClosedReason(competition)
     return (
         <>
             <Col>
@@ -36,7 +37,10 @@ function CompetitionDetail({ competition }: { competition: CompetitionType }) {
                                 </ListGroupItem>
                             }
                         </ListGroup>
-                        <Button onClick={handleApply(competition.id)}>Apply</Button>
+                        {closedReason ?
+                            <p className="text-body-secondary mb-0">{closedReason}</p> :
+                            <Button onClick={handleApply(competition.id)}>Apply</Button>
+                        }
                     </Card.Body>
                 </Card>
             </Col >
