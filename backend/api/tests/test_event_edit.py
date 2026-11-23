@@ -304,7 +304,7 @@ class TestRemoveEventApplications(EventEditTestCase):
         )
 
     def test_admin_cancels_or_declines(self):
-        for value in (Application.Status.CANCLED, Application.Status.DECLINED):
+        for value in (Application.Status.CANCELLED, Application.Status.DECLINED):
             with self.subTest(status=value.label):
                 response = self.client.patch(self.url(), {"status": value})
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -343,7 +343,7 @@ class TestRemoveEventApplications(EventEditTestCase):
             with self.subTest(user=user.username):
                 self.client.force_authenticate(user)
                 response = self.client.patch(
-                    self.url(), {"status": Application.Status.CANCLED}
+                    self.url(), {"status": Application.Status.CANCELLED}
                 )
                 self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
                 self.assertEqual(self.client.delete(self.url()).status_code, 403)
@@ -357,11 +357,11 @@ class TestRemoveEventApplications(EventEditTestCase):
             user=make_user("joe").referee, competition=other_day
         )
         response = self.client.patch(
-            self.url(application=other), {"status": Application.Status.CANCLED}
+            self.url(application=other), {"status": Application.Status.CANCELLED}
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_only_patch_and_delete(self):
-        response = self.client.put(self.url(), {"status": Application.Status.CANCLED})
+        response = self.client.put(self.url(), {"status": Application.Status.CANCELLED})
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
         self.assertEqual(self.client.get(self.url()).status_code, 405)

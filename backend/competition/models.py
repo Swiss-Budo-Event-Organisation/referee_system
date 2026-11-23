@@ -268,7 +268,7 @@ class Application(models.Model):
     class Status(models.IntegerChoices):
         NOSHOW = -4, _("No Show")
         DECLINED = -3, _("Declined")
-        CANCLED = -2, _("Cancled")
+        CANCELLED = -2, _("Cancelled")
         NOTSELECTED = -1, _("Not selected")
         APPLIED = 0, _("Applied")
         SELECTED = 1, _("Selected")

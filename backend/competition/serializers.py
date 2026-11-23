@@ -106,7 +106,7 @@ class EventApplicationStatusSerializer(serializers.ModelSerializer):
     may only set it to cancelled or declined.
     """
 
-    REMOVED = [Application.Status.CANCLED, Application.Status.DECLINED]
+    REMOVED = [Application.Status.CANCELLED, Application.Status.DECLINED]
 
     status = serializers.ChoiceField(
         choices=[(s.value, s.label) for s in REMOVED],

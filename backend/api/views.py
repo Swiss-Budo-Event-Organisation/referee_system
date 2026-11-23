@@ -416,7 +416,7 @@ class DeleteApplicationView(generics.DestroyAPIView):
     def perform_destroy(self, instance):
         if timezone.now() - instance.created < timezone.timedelta(minutes=30):
             return super().perform_destroy(instance)
-        instance.status = Application.Status.CANCLED
+        instance.status = Application.Status.CANCELLED
         instance.save()
         raise MethodNotAllowed(instance)
 
