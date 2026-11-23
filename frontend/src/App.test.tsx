@@ -74,7 +74,10 @@ const responses: Record<string, unknown> = {
     { id: 1, name: "Regional" },
     { id: 2, name: "National B" },
   ],
-  "/api/user/7": { id: 7, username: "john", first_name: "John", last_name: "Doe", referee: { address: 5 } },
+  "/api/user/7": {
+    id: 7, username: "john", first_name: "John", last_name: "Doe", referee: { address: 5 },
+    permissions: ["competition.add_event"],
+  },
   "/api/examinations/user/": [{ id: 1, candidate: 7, license: 1, passed: true, date: "2024-05-01", note_internal: "", note_external: "" }],
   "/api/applications/": [],
   "/api/locations/": [location],
@@ -274,6 +277,24 @@ describe("App", () => {
     expect(screen.getByLabelText(/^Name/)).toHaveClass("is-invalid");
     expect(screen.getByText("Choose at least one category.")).toBeInTheDocument();
     expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("refuses the event creation page without the permission", async () => {
+    const getUser7 = (getRequest as Mock).getMockImplementation()!;
+    (getRequest as Mock).mockImplementation(async (url: string, signal: AbortSignal) =>
+      url === "/api/user/7" ? { ...(responses[url] as object), permissions: [] } : getUser7(url, signal),
+    );
+    logIn();
+    renderApp("/events/new");
+    expect(await screen.findByText(/don't have the permission to create events/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "New Event" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "New Event" })).not.toBeInTheDocument();
+  });
+
+  it("shows the New Event link with the permission", async () => {
+    logIn();
+    renderApp("/events/");
+    expect(await screen.findByRole("link", { name: "New Event" })).toBeInTheDocument();
   });
 
   it("asks for a new location when none exist yet", async () => {

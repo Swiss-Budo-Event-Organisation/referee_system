@@ -53,6 +53,9 @@ function EventForm() {
         onError: (error) => {
             if (isAxiosError(error) && error.response?.status === 400) {
                 setErrors(parseServerErrors(error.response.data));
+            } else if (isAxiosError(error) && error.response?.status === 403) {
+                const detail = error.response.data?.detail;
+                setErrors({ ...emptyErrors(), general: [detail ?? "You may not create this event."] });
             } else {
                 setErrors({ ...emptyErrors(), general: ["The event could not be saved. Please try again."] });
             }

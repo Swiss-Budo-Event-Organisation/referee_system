@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.contrib.auth.models import Group
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -17,6 +18,7 @@ from referee.models import RefereeLicense
 class TestCreateEventWithCompetitions(APITestCase):
     def setUp(self):
         self.user = make_user("john", first_name="John", last_name="Doe")
+        self.user.groups.add(Group.objects.get(name="National Admin"))
         self.referee = self.user.referee
         self.client.force_authenticate(self.user)
         self.regional = RefereeLicense.objects.get(name="Regional")
@@ -109,15 +111,44 @@ class TestCreateEventWithCompetitions(APITestCase):
         self.assertEqual(location.address.city, "Zurich")
         self.assertEqual(Event.objects.get().location, location)
 
-    def test_open_to_every_authenticated_user(self):
-        self.client.force_authenticate(make_user("jane"))
-        response = self.post(
-            {
-                "name": "Open Event",
-                "location": make_location().pk,
-                "competitions": [self.competition(self.day1)],
-            }
-        )
+    def event(self, *categories):
+        return {
+            "name": "Open Event",
+            "location": make_location().pk,
+            "competitions": [
+                self.competition(self.day1, category=[c.pk for c in categories])
+            ],
+        }
+
+    def test_staff_may_create_any_event(self):
+        self.client.force_authenticate(make_user("jane", is_staff=True))
+        response = self.post(self.event(self.national))
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_users_without_permission_are_refused(self):
+        member = make_user("jane")
+        member.groups.add(Group.objects.get(name="National"))
+        observer = make_user("joe")
+        observer.groups.add(Group.objects.get(name="National Observer"))
+        for user in (make_user("nobody"), member, observer):
+            with self.subTest(user=user.username):
+                self.client.force_authenticate(user)
+                response = self.post(self.event(self.national))
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Event.objects.exists())
+
+    def test_admin_needs_one_of_the_categories(self):
+        region1 = CompetitionCategory.objects.get(name="Region 1")
+        region2 = CompetitionCategory.objects.get(name="Region 2")
+        admin = make_user("jane")
+        admin.groups.add(region1.admins)
+        self.client.force_authenticate(admin)
+
+        response = self.post(self.event(region2))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Event.objects.exists())
+
+        response = self.post(self.event(region1, region2))
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
 
     def test_requires_authentication(self):

@@ -69,14 +69,18 @@ def observer_permissions(Permission, using="default"):
 
 def create_category_groups(category, Group, Permission, using="default"):
     """
-    Create the three groups of a category and link the admin and observer
-    group to it, unless the category already has groups assigned.
+    Create the three groups of a category and link them to it, unless the
+    category already has groups assigned.
     """
     groups = Group.objects.using(using)
     member_name, admin_name, observer_name = group_names(category.name)
-    groups.get_or_create(name=member_name)
 
     changes = {}
+    # Migrations before competition.0008 don't know the member link yet.
+    if not hasattr(category, "members_id"):
+        groups.get_or_create(name=member_name)
+    elif category.members_id is None:
+        changes["members"], _ = groups.get_or_create(name=member_name)
     if category.admins_id is None:
         admin, created = groups.get_or_create(name=admin_name)
         if created:
@@ -99,19 +103,16 @@ def rename_category_groups(category, old_name, Group, using="default"):
     """
     Rename the groups of a category after the category was renamed.
 
-    The member group and the admin and observer group are renamed only while
-    they still carry the default name for the old category name, so groups
-    assigned by hand keep their names. A group is also left alone if a group
-    with the new name exists already.
+    The linked groups are renamed only while they still carry the default
+    name for the old category name, so groups assigned by hand keep their
+    names. A group is also left alone if a group with the new name exists
+    already.
     """
     groups = Group.objects.using(using)
     old_names = group_names(old_name)
     new_names = group_names(category.name)
-    linked = [None, category.admins_id, category.observers_id]
+    linked = [category.members_id, category.admins_id, category.observers_id]
     for old, new, linked_id in zip(old_names, new_names, linked, strict=True):
-        if groups.filter(name=new).exists():
+        if linked_id is None or groups.filter(name=new).exists():
             continue
-        candidates = groups.filter(name=old)
-        if linked_id is not None:
-            candidates = candidates.filter(pk=linked_id)
-        candidates.update(name=new)
+        groups.filter(name=old, pk=linked_id).update(name=new)

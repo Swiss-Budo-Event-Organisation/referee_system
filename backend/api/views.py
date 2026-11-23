@@ -7,6 +7,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import SAFE_METHODS
 from rest_framework.permissions import AllowAny
+from rest_framework.permissions import BasePermission
 from rest_framework.permissions import DjangoModelPermissions
 from rest_framework.permissions import IsAuthenticated
 
@@ -18,7 +19,10 @@ from competition.models import Competition
 from competition.models import CompetitionCategory
 from competition.models import Event
 from competition.models import Invitation
+from competition.permissions import can_apply
 from competition.permissions import can_assign_categories
+from competition.permissions import can_create_event
+from competition.permissions import can_create_events
 from competition.permissions import can_manage_competition
 from competition.permissions import managed_applications
 from competition.permissions import observed_competitions
@@ -47,17 +51,24 @@ from referee.serializers import RefereeOptionSerializer
 class CompetitionPermission(DjangoModelPermissions):
     """
     Model permissions plus the category check: changing or deleting a
-    competition requires administering one of its categories.
+    competition requires administering one of its categories, or being a
+    staff member.
     """
 
     def has_object_permission(self, request, view, obj):
-        if request.method in SAFE_METHODS:
+        if request.method in SAFE_METHODS or request.user.is_staff:
             return True
         return can_manage_competition(request.user, obj)
 
 
 def _check_categories(user, categories, current=()):
-    if categories is not None and not can_assign_categories(user, categories, current):
+    if categories is None:
+        return
+    if user.is_staff:
+        if not categories:
+            raise ValidationError({"category": ["Choose at least one category."]})
+        return
+    if not can_assign_categories(user, categories, current):
         raise PermissionDenied(detail="You may only assign categories you administer.")
 
 
@@ -97,19 +108,35 @@ class CreateEventView(generics.CreateAPIView):
     permission_classes = [DjangoModelPermissions]
 
 
+class CanCreateEvents(BasePermission):
+    message = "You may not create events."
+
+    def has_permission(self, request, view):
+        return can_create_events(request.user)
+
+
 class CreateEventWithCompetitionsView(generics.CreateAPIView):
     """
     Create an event together with its competitions from a single form.
 
-    Open to every authenticated user for now; permissions are going to be
-    reworked.
+    Staff members may create any event; others need the permission to add
+    events and must administer one of the categories of the event.
     """
 
     queryset = Event.objects.all()
     serializer_class = EventCreateSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanCreateEvents]
 
     def perform_create(self, serializer):
+        categories = [
+            category
+            for competition in serializer.validated_data["competitions"]
+            for category in competition["category"]
+        ]
+        if not can_create_event(self.request.user, categories):
+            raise PermissionDenied(
+                detail="You must be an admin of at least one of the categories."
+            )
         serializer.save(creator=self.request.user)
 
 
@@ -218,6 +245,11 @@ class CreateListApplicationView(generics.ListCreateAPIView):
                     detail="You are not allowed to apply someone else."
                 )
             competition = serializer.validated_data["competition"]
+            if not can_apply(self.request.user, competition):
+                raise PermissionDenied(
+                    detail="Only members of one of the competition's categories "
+                    "may apply."
+                )
             if not competition.registration_open():
                 raise ValidationError(
                     {"competition": ["Registration for this competition is closed."]}

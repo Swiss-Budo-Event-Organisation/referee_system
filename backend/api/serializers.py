@@ -17,11 +17,24 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     referee = RefereeSerializer(many=False, read_only=False)
+    permissions = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "first_name", "last_name", "username", "password", "referee"]
+        fields = [
+            "id",
+            "first_name",
+            "last_name",
+            "username",
+            "password",
+            "referee",
+            "permissions",
+        ]
         extra_kwargs = {"password": {"write_only": True}}
+
+    def get_permissions(self, user) -> list[str]:
+        """Model permissions, e.g. "competition.add_event", for the frontend."""
+        return sorted(user.get_all_permissions())
 
     def create(self, validated_data):
         referee_data = validated_data.pop("referee")

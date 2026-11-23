@@ -8,8 +8,8 @@ class TestCategoryGroups(TestCase):
     def test_new_category_gets_three_groups(self):
         category = CompetitionCategory.objects.create(name="Kata")
 
-        self.assertTrue(Group.objects.filter(name="Kata").exists())
         category.refresh_from_db()
+        self.assertEqual(category.members.name, "Kata")
         self.assertEqual(category.admins.name, "Kata Admin")
         self.assertEqual(category.observers.name, "Kata Observer")
 

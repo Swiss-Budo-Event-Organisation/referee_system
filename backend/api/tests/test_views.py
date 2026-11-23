@@ -1,6 +1,7 @@
 from datetime import date
 from datetime import timedelta
 
+from django.contrib.auth.models import Group
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -219,6 +220,12 @@ class TestUser(AuthenticatedTestCase):
             set(response.data["referee"]),
             {"id", "address", "dob", "iban", "phone", "mobile"},
         )
+        self.assertEqual(response.data["permissions"], [])
+
+    def test_permissions_of_the_user(self):
+        self.user.groups.add(Group.objects.get(name="Region 1 Admin"))
+        response = self.client.get(reverse("user", args=[self.user.pk]))
+        self.assertIn("competition.add_event", response.data["permissions"])
 
 
 class TestApplications(AuthenticatedTestCase):
@@ -226,11 +233,39 @@ class TestApplications(AuthenticatedTestCase):
         super().setUp()
         self.event = make_event()
         self.competition = make_competition(self.event, self.user.referee)
+        self.user.groups.add(Group.objects.get(name="National"))
         Examination.create(
             self.user,
             license=RefereeLicense.objects.get(name="Regional"),
             date=date(2024, 5, 1),
         )
+
+    def member(self, username, group="National"):
+        """A user in the member group of a category."""
+        user = make_user(username)
+        user.groups.add(Group.objects.get(name=group))
+        return user
+
+    def test_only_members_of_a_category_may_apply(self):
+        cases = {
+            "nobody": make_user("nobody"),
+            "admin": self.member("admin", "National Admin"),
+            "observer": self.member("observer", "National Observer"),
+            "other category": self.member("other", "Region 1"),
+        }
+        for name, user in cases.items():
+            with self.subTest(user=name):
+                response = self.apply(self.competition, user)
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+                self.assertEqual(
+                    response.data["detail"],
+                    "Only members of one of the competition's categories may apply.",
+                )
+        self.assertFalse(Application.objects.exists())
+
+        # self.user is in the National member group and has a license.
+        response = self.apply(self.competition)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def apply(self, competition, user=None):
         user = user or self.user
@@ -255,7 +290,7 @@ class TestApplications(AuthenticatedTestCase):
             response.data["competition"],
             ["You need at least the National B license to apply."],
         )
-        self.assertEqual(self.apply(competition, make_user("jane")).status_code, 400)
+        self.assertEqual(self.apply(competition, self.member("jane")).status_code, 400)
         self.assertFalse(Application.objects.exists())
 
     def test_no_license_needed_without_minimum(self):
@@ -263,7 +298,7 @@ class TestApplications(AuthenticatedTestCase):
             self.event, self.user.referee, minimum_level=None
         )
 
-        response = self.apply(competition, make_user("jane"))
+        response = self.apply(competition, self.member("jane"))
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
@@ -321,7 +356,7 @@ class TestApplications(AuthenticatedTestCase):
         self.assertFalse(Application.objects.exists())
 
     def test_cannot_apply_for_someone_else(self):
-        other = make_user("jane")
+        other = self.member("jane")
         response = self.client.post(
             reverse("application-create-list"),
             {"user": other.referee.pk, "competition": self.competition.pk},
@@ -345,7 +380,7 @@ class TestApplications(AuthenticatedTestCase):
         self.assertEqual(Application.objects.count(), 1)
 
     def test_list_only_own_applications(self):
-        other = make_user("jane")
+        other = self.member("jane")
         Application.objects.create(user=self.user.referee, competition=self.competition)
         Application.objects.create(user=other.referee, competition=self.competition)
 

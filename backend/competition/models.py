@@ -31,9 +31,17 @@ class CompetitionCategory(Category):
     """
     Category of a competition. Members of the `admins` group manage
     competitions of this category; members of the `observers` group may view
-    them and their applications.
+    them and their applications. Members of any of the three groups may apply.
     """
 
+    members = models.ForeignKey(
+        Group,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="member_categories",
+        verbose_name=_("Member group"),
+    )
     admins = models.ForeignKey(
         Group,
         on_delete=models.SET_NULL,

@@ -34,7 +34,7 @@ export function handleApply(id: number) {
                         toast.error(String(value));
                     }
                 } else if (error.status === 403) {
-                    toast.error("You are not allowed to apply.");
+                    toast.error(error.response?.data?.detail ?? "You are not allowed to apply.");
                 } else {
                     console.error(error);
                 }

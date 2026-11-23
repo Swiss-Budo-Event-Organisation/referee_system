@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { getUser } from "../../../lib/auth";
 import { getApplications, getExaminations, getProfile } from "../utils/User";
 
 export function useProfileQuery(pk: number) {
@@ -24,4 +25,22 @@ export function useExaminationQuery(user: number) {
         gcTime: 1000 * 60 * 30,
         staleTime: 1000 * 60 * 10,
     })
+}
+
+/**
+ * Whether the logged-in user has a model permission such as
+ * "competition.add_event". Undefined while the user is being loaded.
+ */
+export function useHasPermission(permission: string): boolean | undefined {
+    const id = getUser();
+    const query = useQuery({
+        queryKey: ["profile", id],
+        queryFn: (obj) => getProfile(id as number, obj.signal),
+        enabled: id !== undefined,
+        gcTime: 1000 * 60 * 30,
+        staleTime: 1000 * 60 * 10,
+    });
+    if (id === undefined || query.isError) return false;
+    if (query.data === undefined) return undefined;
+    return (query.data.permissions ?? []).includes(permission);
 }
