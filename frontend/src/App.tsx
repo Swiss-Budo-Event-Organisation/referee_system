@@ -7,6 +7,7 @@ const EventOverview = lazy(() => import("./pages/EventOverview"));
 const EventCreate = lazy(() => import("./pages/EventCreate"));
 const EventDetail = lazy(() => import("./pages/EventDetail"));
 const EventEdit = lazy(() => import("./pages/EventEdit"));
+const EventDetails = lazy(() => import("./pages/EventDetails"));
 const Login = lazy(() => import("./pages/Login"));
 const MainLayout = lazy(() => import("./layouts/MainLayout"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -44,6 +45,13 @@ function App() {
           <Suspense fallback={<LoadingIndicator size="15rem" />}>
             <ProtectedRoute>
               <EventCreate />
+            </ProtectedRoute>
+          </Suspense>
+        } />
+        <Route path="events/:pk/details" element={
+          <Suspense fallback={<LoadingIndicator size="15rem" />}>
+            <ProtectedRoute>
+              <EventDetails />
             </ProtectedRoute>
           </Suspense>
         } />

@@ -156,6 +156,7 @@ class EventSerializer(serializers.ModelSerializer):
     location = LocationSerializer(many=False, read_only=True)
     competitions = CompetitionSerializer(many=True, read_only=True)
     can_edit = serializers.SerializerMethodField()
+    can_view_details = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
@@ -173,18 +174,29 @@ class EventSerializer(serializers.ModelSerializer):
             "slug",
             "accommodations",
             "can_edit",
+            "can_view_details",
         ]
         read_only_fields = ["created", "modified", "creator"]
         # DRF's UniqueForYearValidator makes slug and start required even on
         # partial updates, so uniqueness is checked in validate() instead.
         validators = []
 
-    def get_can_edit(self, event) -> bool:
-        """Whether the requesting user may edit the event."""
+    def _user_may(self, perm, event) -> bool:
         request = self.context.get("request")
         if request is None:
             return False
-        return request.user.has_perm("competition.change_event", event)
+        return request.user.has_perm(perm, event)
+
+    def get_can_edit(self, event) -> bool:
+        """Whether the requesting user may edit the event."""
+        return self._user_may("competition.change_event", event)
+
+    def get_can_view_details(self, event) -> bool:
+        """
+        Whether the requesting user may see all details of the event,
+        including its applications (observers, admins and staff).
+        """
+        return self._user_may("competition.view_event", event)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)

@@ -156,9 +156,19 @@ class TestEditEvent(EventEditTestCase):
 
     def test_detail_tells_whether_the_user_may_edit(self):
         url = reverse("event-detail", args=[self.event.pk])
-        self.assertTrue(self.client.get(url).data["can_edit"])
-        self.client.force_authenticate(member_of("observer", "Region 1 Observer"))
-        self.assertFalse(self.client.get(url).data["can_edit"])
+        cases = [
+            (self.admin, True, True),
+            (member_of("observer", "Region 1 Observer"), False, True),
+            (make_user("staff", is_staff=True), True, True),
+            (member_of("member", "Region 1"), False, False),
+            (member_of("r2", "Region 2 Observer"), False, False),
+        ]
+        for user, can_edit, can_view_details in cases:
+            with self.subTest(user=user.username):
+                self.client.force_authenticate(user)
+                data = self.client.get(url).data
+                self.assertEqual(data["can_edit"], can_edit)
+                self.assertEqual(data["can_view_details"], can_view_details)
 
 
 class TestEventApplications(EventEditTestCase):
@@ -212,10 +222,26 @@ class TestEventApplications(EventEditTestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("competition", response.data)
 
-    def test_only_for_those_who_may_edit(self):
+    def test_observers_may_list_but_not_add(self):
+        Application.objects.create(user=self.admin.referee, competition=self.day1)
+        observer = member_of("observer", "Region 1 Observer")
+        self.client.force_authenticate(observer)
+
+        response = self.client.get(self.url())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+
+        response = self.client.post(
+            self.url(), {"user": observer.referee.pk, "competition": self.day1.pk}
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(Application.objects.count(), 1)
+
+    def test_others_may_neither_list_nor_add(self):
         for user in (
-            member_of("observer", "Region 1 Observer"),
             member_of("r2", "Region 2 Admin"),
+            member_of("r2-observer", "Region 2 Observer"),
+            member_of("member", "Region 1"),
         ):
             with self.subTest(user=user.username):
                 self.client.force_authenticate(user)
@@ -226,6 +252,38 @@ class TestEventApplications(EventEditTestCase):
                 )
                 self.assertEqual(response.status_code, 403)
         self.assertFalse(Application.objects.exists())
+
+    def test_ordered_by_day_status_and_date(self):
+        statuses = [
+            ("applied-early", Application.Status.APPLIED),
+            ("declined", Application.Status.DECLINED),
+            ("selected", Application.Status.SELECTED),
+            ("applied-late", Application.Status.APPLIED),
+            ("invited", Application.Status.INVITED),
+        ]
+        for username, value in statuses:
+            Application.objects.create(
+                user=make_user(username).referee, competition=self.day1, status=value
+            )
+        Application.objects.create(
+            user=make_user("day2").referee,
+            competition=self.day2,
+            status=Application.Status.PARTICIPATED,
+        )
+
+        response = self.client.get(self.url())
+
+        self.assertEqual(
+            [a["name"] for a in response.data],
+            [
+                "invited",
+                "selected",
+                "applied-early",
+                "applied-late",
+                "declined",
+                "day2",
+            ],
+        )
 
     def test_unknown_event(self):
         response = self.client.get(reverse("event-applications", args=[9999]))

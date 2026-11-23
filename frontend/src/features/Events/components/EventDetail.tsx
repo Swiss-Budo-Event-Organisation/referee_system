@@ -28,11 +28,18 @@ function EventDetailRender({ pk }: { pk: number }) {
         <>
             <div className="d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <h1>{eventQuery.data.name}</h1>
-                {eventQuery.data.can_edit && (
-                    <Link to={`/events/${pk}/edit`} className="btn btn-outline-primary">
-                        <i className="bi bi-pencil" aria-hidden="true" /> Edit
-                    </Link>
-                )}
+                <div className="d-flex gap-2">
+                    {eventQuery.data.can_view_details && (
+                        <Link to={`/events/${pk}/details`} className="btn btn-outline-secondary">
+                            <i className="bi bi-list-check" aria-hidden="true" /> View details
+                        </Link>
+                    )}
+                    {eventQuery.data.can_edit && (
+                        <Link to={`/events/${pk}/edit`} className="btn btn-outline-primary">
+                            <i className="bi bi-pencil" aria-hidden="true" /> Edit
+                        </Link>
+                    )}
+                </div>
             </div>
             <LocationAddress location={eventQuery.data.location}>
                 &nbsp;&ndash;&nbsp;

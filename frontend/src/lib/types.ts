@@ -11,6 +11,7 @@ export type EventType = {
     start: string;
     end: string | null;
     can_edit?: boolean;
+    can_view_details?: boolean;
 }
 export type LocationType = {
     id: number;

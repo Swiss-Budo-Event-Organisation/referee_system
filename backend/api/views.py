@@ -183,9 +183,10 @@ class EditEventWithCompetitionsView(generics.RetrieveUpdateAPIView):
 
 class EventApplicationsView(generics.ListCreateAPIView):
     """
-    All applications for the competitions of an event, for those who may edit
-    the event. They may also add an application for any referee, bypassing
-    the registration, license and membership checks.
+    All applications for the competitions of an event, by competition, status
+    (furthest along first) and date. Observers, admins and staff may list
+    them. Those who may edit the event may also add an application for any
+    referee, bypassing the registration, license and membership checks.
     """
 
     serializer_class = EventApplicationSerializer
@@ -193,7 +194,10 @@ class EventApplicationsView(generics.ListCreateAPIView):
 
     def get_event(self):
         event = get_object_or_404(Event, pk=self.kwargs["pk"])
-        if not self.request.user.has_perm("competition.change_event", event):
+        if self.request.method in SAFE_METHODS:
+            if not self.request.user.has_perm("competition.view_event", event):
+                raise PermissionDenied(detail="You may not view this event.")
+        elif not self.request.user.has_perm("competition.change_event", event):
             raise PermissionDenied(detail=CanChangeEvent.message)
         return event
 
@@ -211,7 +215,7 @@ class EventApplicationsView(generics.ListCreateAPIView):
         return (
             Application.objects.filter(competition__event=self.event)
             .select_related("user__user")
-            .order_by("competition__start", "created")
+            .order_by("competition__start", "-status", "created")
         )
 
 

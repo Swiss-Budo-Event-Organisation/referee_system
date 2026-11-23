@@ -308,6 +308,101 @@ describe("App", () => {
     }
   });
 
+  describe("event details", () => {
+    const applications = [
+      { id: 11, user: 9, name: "Ana Bern", competition: 3, status: 1, status_display: "Selected", created: "2030-10-01T10:00:00+02:00" },
+      { id: 9, user: 8, name: "Jane Roe", competition: 3, status: 0, status_display: "Applied", created: "2030-10-02T10:00:00+02:00" },
+      { id: 12, user: 10, name: "Joe Rex", competition: 3, status: -3, status_display: "Declined", created: "2030-10-03T10:00:00+02:00" },
+    ];
+
+    function withEvent(extra: object) {
+      const previous = { ...responses };
+      responses["/api/events/1"] = { ...events[0], competitions: [competition], ...extra };
+      responses["/api/events/1/applications/"] = applications;
+      return () => Object.assign(responses, previous);
+    }
+
+    it("shows View details and Edit to admins", async () => {
+      const restore = withEvent({ can_edit: true, can_view_details: true });
+      try {
+        logIn();
+        renderApp("/events/1");
+        expect(await screen.findByRole("link", { name: "View details" })).toHaveAttribute("href", "/events/1/details");
+        expect(screen.getByRole("link", { name: "Edit" })).toBeInTheDocument();
+      } finally {
+        restore();
+      }
+    });
+
+    it("shows only View details to observers", async () => {
+      const restore = withEvent({ can_edit: false, can_view_details: true });
+      try {
+        logIn();
+        renderApp("/events/1");
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole("link", { name: "View details" }));
+
+        const day = within(await screen.findByRole("region", { name: /^Details/ }));
+        expect(day.getByText("Invited by").nextSibling).toHaveTextContent("John Doe");
+        expect(day.getByText("Desired license").nextSibling).toHaveTextContent("National B");
+        expect(day.getByText("Mats").nextSibling).toHaveTextContent("4");
+        expect(day.getByText("National")).toBeInTheDocument();
+        const rows = day.getAllByRole("row").slice(1).map((row) => row.textContent);
+        expect(rows).toEqual([
+          expect.stringContaining("Ana BernSelected"),
+          expect.stringContaining("Jane RoeApplied"),
+          expect.stringContaining("Joe RexDeclined"),
+        ]);
+        // Nothing to edit.
+        expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: /Remove/ })).not.toBeInTheDocument();
+        expect(screen.queryByLabelText("Add an application")).not.toBeInTheDocument();
+        expect(screen.queryByRole("textbox", { name: /^Name/ })).not.toBeInTheDocument();
+      } finally {
+        restore();
+      }
+    });
+
+    it("filters the applications by referee name", async () => {
+      const restore = withEvent({ can_view_details: true });
+      try {
+        logIn();
+        renderApp("/events/1/details");
+        const user = userEvent.setup();
+        const search = await screen.findByRole("searchbox", { name: "Search referee" });
+
+        await user.type(search, "jo");
+        const day = within(screen.getByRole("region", { name: /^Details/ }));
+        expect(day.queryByText("Ana Bern")).not.toBeInTheDocument();
+        expect(day.getAllByRole("row")).toHaveLength(2);
+        expect(day.getByText("1 of 3 match")).toBeInTheDocument();
+        expect(screen.getByRole("status")).toHaveTextContent("1 application matching “jo”.");
+        expect(day.getByText("Jo", { selector: "mark" })).toBeInTheDocument();
+
+        await user.clear(search);
+        await user.type(search, "nobody");
+        expect(screen.getByRole("status")).toHaveTextContent("No application from a referee matching “nobody”.");
+        expect(day.getByText(/No referee matching “nobody” applied/)).toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: "Clear" }));
+        expect(day.getAllByRole("row")).toHaveLength(4);
+      } finally {
+        restore();
+      }
+    });
+
+    it("refuses the details without the permission", async () => {
+      const restore = withEvent({ can_view_details: false });
+      try {
+        logIn();
+        renderApp("/events/1/details");
+        expect(await screen.findByText(/don't have the permission to see the details/)).toBeInTheDocument();
+      } finally {
+        restore();
+      }
+    });
+  });
+
   it("hides the edit link from others", async () => {
     logIn();
     renderApp("/events/1");

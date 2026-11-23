@@ -107,7 +107,7 @@ export type EditableEventType = {
 };
 
 /** Minutes of a Django duration such as "09:30:00" or "1 02:00:00". */
-function durationMinutes(value: string): number {
+export function durationMinutes(value: string): number {
     const [days, time] = value.includes(" ") ? value.split(" ") : ["0", value];
     const [hours, mins] = time.split(":").map(Number);
     return Number(days) * 24 * 60 + hours * 60 + mins;
