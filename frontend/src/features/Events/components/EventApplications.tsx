@@ -61,7 +61,7 @@ function RemoveApplication({ eventId, application }: RemoveProps) {
             >
                 <i className="bi bi-person-dash" aria-hidden="true" /> Remove
             </Dropdown.Toggle>
-            <Dropdown.Menu>
+            <Dropdown.Menu className="shadow">
                 <Dropdown.Item as="button" disabled={application.status === CANCELLED} onClick={() => mutation.mutate(CANCELLED)}>
                     Set to cancelled
                 </Dropdown.Item>
@@ -123,7 +123,8 @@ function CompetitionApplications({ eventId, competition, applications, referees 
                 {applications.length === 0 ? (
                     <p className="text-body-secondary">No applications yet.</p>
                 ) : (
-                    <Table size="sm" responsive className="mb-3 align-middle">
+                    <Table size="sm" className="mb-3 align-middle">
+                        {/* No "responsive" wrapper: its scrolling would clip the Remove menu. */}
                         <thead>
                             <tr>
                                 <th>Referee</th>
