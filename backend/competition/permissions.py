@@ -81,3 +81,39 @@ def managed_applications(user) -> QuerySet[Application]:
 
 def observed_applications(user) -> QuerySet[Application]:
     return Application.objects.filter(competition__in=observed_competitions(user))
+
+
+def can_create_events(user) -> bool:
+    """
+    May the user open the event creation page at all? Staff members and
+    users whose groups grant the permission to add events may.
+    """
+    return user.is_authenticated and user.has_perm("competition.add_event")
+
+
+def can_create_event(user, categories: Iterable[CompetitionCategory]) -> bool:
+    """
+    May the user create an event whose competitions have these categories?
+    Staff members may; others need the permission to add events and must be
+    in the admin group of at least one of the categories.
+    """
+    return can_create_events(user) and administers_any(user, categories)
+
+
+def administers_any(user, categories: Iterable[CompetitionCategory]) -> bool:
+    """Is the user staff or in the admin group of one of the categories?"""
+    if user.is_authenticated and (user.is_staff or user.is_superuser):
+        return True
+    pks = {category.pk for category in categories}
+    return administered_categories(user).filter(pk__in=pks).exists()
+
+
+def can_apply(user, competition: Competition) -> bool:
+    """
+    May the user apply for the competition? Only members of the member group
+    of one of its categories may. Admins and observers may see the
+    competition, but they need to be in the member group to apply.
+    """
+    if not user.is_authenticated or not user.is_active:
+        return False
+    return competition.category.filter(members__in=user.groups.all()).exists()

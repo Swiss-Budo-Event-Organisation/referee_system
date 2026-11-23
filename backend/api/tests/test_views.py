@@ -1,11 +1,13 @@
 from datetime import date
 from datetime import timedelta
 
+from django.contrib.auth.models import Group
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from api.serializers import UserSerializer
 from api.tests.helpers import grant
 from api.tests.helpers import make_competition
 from api.tests.helpers import make_event
@@ -219,6 +221,81 @@ class TestUser(AuthenticatedTestCase):
             set(response.data["referee"]),
             {"id", "address", "dob", "iban", "phone", "mobile"},
         )
+        self.assertEqual(response.data["permissions"], [])
+        self.assertFalse(response.data["is_staff"])
+
+    def urls(self, user=None):
+        pk = (user or self.user).pk
+        return [f"/api/user/{pk}/", f"/api/user/{pk}/update/"]
+
+    def test_staff_flag_is_read_only(self):
+        for url in self.urls():
+            with self.subTest(url=url):
+                response = self.client.patch(url, {"is_staff": True}, format="json")
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.user.refresh_from_db()
+                self.assertFalse(self.user.is_staff)
+
+    def test_updates_own_user_and_referee(self):
+        for url in self.urls():
+            with self.subTest(url=url):
+                data = {
+                    "first_name": "Johnny",
+                    "referee": {"phone": "+41 31 000 00 00"},
+                }
+                response = self.client.patch(url, data, format="json")
+                self.assertEqual(response.status_code, 200, response.data)
+                self.assertEqual(response.data["first_name"], "Johnny")
+                self.user.refresh_from_db()
+                self.assertEqual(self.user.first_name, "Johnny")
+                self.assertEqual(self.user.last_name, "Doe")
+                self.assertEqual(self.user.referee.phone, "+41 31 000 00 00")
+
+    def test_password_is_hashed(self):
+        response = self.client.patch(
+            self.urls()[0], {"password": "n3w-Pa55word"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("n3w-Pa55word"))
+        self.assertNotEqual(self.user.password, "n3w-Pa55word")
+
+    def test_cannot_change_other_users(self):
+        other = make_user("jane", first_name="Jane")
+        for url in self.urls(other):
+            with self.subTest(url=url):
+                response = self.client.patch(url, {"first_name": "X"}, format="json")
+                self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        other.refresh_from_db()
+        self.assertEqual(other.first_name, "Jane")
+
+    def test_staff_changes_other_users(self):
+        other = make_user("jane", first_name="Jane")
+        self.client.force_authenticate(make_user("staff", is_staff=True))
+        response = self.client.patch(
+            self.urls(other)[1], {"first_name": "Janet"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        other.refresh_from_db()
+        self.assertEqual(other.first_name, "Janet")
+
+    def test_serializer_creates_user_with_referee(self):
+        serializer = UserSerializer(
+            data={
+                "username": "new",
+                "password": "s3cret-Pa55word",
+                "referee": {"phone": "123"},
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        user = serializer.save()
+        self.assertTrue(user.check_password("s3cret-Pa55word"))
+        self.assertEqual(user.referee.phone, "123")
+
+    def test_permissions_of_the_user(self):
+        self.user.groups.add(Group.objects.get(name="Region 1 Admin"))
+        response = self.client.get(reverse("user", args=[self.user.pk]))
+        self.assertIn("competition.add_event", response.data["permissions"])
 
 
 class TestApplications(AuthenticatedTestCase):
@@ -226,6 +303,74 @@ class TestApplications(AuthenticatedTestCase):
         super().setUp()
         self.event = make_event()
         self.competition = make_competition(self.event, self.user.referee)
+        self.user.groups.add(Group.objects.get(name="National"))
+        Examination.create(
+            self.user,
+            license=RefereeLicense.objects.get(name="Regional"),
+            date=date(2024, 5, 1),
+        )
+
+    def member(self, username, group="National"):
+        """A user in the member group of a category."""
+        user = make_user(username)
+        user.groups.add(Group.objects.get(name=group))
+        return user
+
+    def test_only_members_of_a_category_may_apply(self):
+        cases = {
+            "nobody": make_user("nobody"),
+            "admin": self.member("admin", "National Admin"),
+            "observer": self.member("observer", "National Observer"),
+            "other category": self.member("other", "Region 1"),
+        }
+        for name, user in cases.items():
+            with self.subTest(user=name):
+                response = self.apply(self.competition, user)
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+                self.assertEqual(
+                    response.data["detail"],
+                    "Only members of one of the competition's categories may apply.",
+                )
+        self.assertFalse(Application.objects.exists())
+
+        # self.user is in the National member group and has a license.
+        response = self.apply(self.competition)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def apply(self, competition, user=None):
+        user = user or self.user
+        self.client.force_authenticate(user)
+        return self.client.post(
+            reverse("application-create-list"),
+            {"user": user.referee.pk, "competition": competition.pk},
+            format="json",
+        )
+
+    def test_license_needed_to_apply(self):
+        competition = make_competition(
+            self.event,
+            self.user.referee,
+            minimum_level=RefereeLicense.objects.get(name="National B"),
+        )
+
+        response = self.apply(competition)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["competition"],
+            ["You need at least the National B license to apply."],
+        )
+        self.assertEqual(self.apply(competition, self.member("jane")).status_code, 400)
+        self.assertFalse(Application.objects.exists())
+
+    def test_no_license_needed_without_minimum(self):
+        competition = make_competition(
+            self.event, self.user.referee, minimum_level=None
+        )
+
+        response = self.apply(competition, self.member("jane"))
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_apply_for_competition(self):
         response = self.client.post(
@@ -239,8 +384,49 @@ class TestApplications(AuthenticatedTestCase):
         self.assertEqual(application.user, self.user.referee)
         self.assertEqual(application.status, Application.Status.APPLIED)
 
+    def test_apply_without_registration_dates(self):
+        self.competition.application_open = None
+        self.competition.application_close = None
+        self.competition.save()
+
+        response = self.client.post(
+            reverse("application-create-list"),
+            {"user": self.user.referee.pk, "competition": self.competition.pk},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_cannot_apply_outside_registration(self):
+        now = timezone.now()
+        cases = {
+            "not yet open": {"application_open": now + timedelta(days=1)},
+            "closed": {"application_close": now - timedelta(minutes=1)},
+            "switched off": {"application": False},
+            "started": {
+                "application_close": None,
+                "start": now - timedelta(hours=1),
+            },
+        }
+        for name, fields in cases.items():
+            with self.subTest(name):
+                competition = make_competition(self.event, self.user.referee, **fields)
+
+                response = self.client.post(
+                    reverse("application-create-list"),
+                    {"user": self.user.referee.pk, "competition": competition.pk},
+                    format="json",
+                )
+
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(
+                    response.data["competition"],
+                    ["Registration for this competition is closed."],
+                )
+        self.assertFalse(Application.objects.exists())
+
     def test_cannot_apply_for_someone_else(self):
-        other = make_user("jane")
+        other = self.member("jane")
         response = self.client.post(
             reverse("application-create-list"),
             {"user": other.referee.pk, "competition": self.competition.pk},
@@ -264,7 +450,7 @@ class TestApplications(AuthenticatedTestCase):
         self.assertEqual(Application.objects.count(), 1)
 
     def test_list_only_own_applications(self):
-        other = make_user("jane")
+        other = self.member("jane")
         Application.objects.create(user=self.user.referee, competition=self.competition)
         Application.objects.create(user=other.referee, competition=self.competition)
 

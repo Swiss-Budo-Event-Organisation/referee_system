@@ -4,7 +4,6 @@ from django.core import mail
 from django.core.validators import MaxValueValidator
 from django.core.validators import MinValueValidator
 from django.db import models
-from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
@@ -32,9 +31,17 @@ class CompetitionCategory(Category):
     """
     Category of a competition. Members of the `admins` group manage
     competitions of this category; members of the `observers` group may view
-    them and their applications.
+    them and their applications. Members of any of the three groups may apply.
     """
 
+    members = models.ForeignKey(
+        Group,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="member_categories",
+        verbose_name=_("Member group"),
+    )
     admins = models.ForeignKey(
         Group,
         on_delete=models.SET_NULL,
@@ -120,6 +127,10 @@ class Competition(models.Model):
         RefereeLicense,
         on_delete=models.PROTECT,
         related_name="+",
+        null=True,
+        blank=True,
+        verbose_name=_("Minimum license"),
+        help_text=_("Leave empty to also accept candidates without a license."),
     )
     desired_level = models.ForeignKey(
         RefereeLicense,
@@ -178,24 +189,45 @@ class Competition(models.Model):
         """
         return f"{self.event.name} ({self.start.date()})"
 
-    def application_allowed(self, user: Referee | None = None) -> bool:
+    @property
+    def registration_closes(self) -> timezone.datetime:
         """
-        Check if application is currently possible.
+        End of the registration period: the closing date if one is set,
+        otherwise the start of the competition.
+        """
+        return self.application_close or self.start
+
+    def registration_open(self) -> bool:
+        """
+        Check if registration is currently open. Without an opening date it is
+        open right away; without a closing date it stays open until the
+        competition starts.
         """
         if not self.application:
             return False
         now = timezone.now()
-        if now < self.application_open:
+        if self.application_open is not None and now < self.application_open:
             return False
-        if now > self.application_close:
-            return False
-        if user is None:
+        return now <= self.registration_closes
+
+    def is_eligible(self, user: Referee) -> bool:
+        """
+        Check if the referee holds the minimum license or a higher one.
+        Without a minimum license everyone is eligible, also candidates who
+        don't have a license yet.
+        """
+        if self.minimum_level is None:
             return True
-        for lic in user.licenses():
-            license = get_object_or_404(RefereeLicense, name=lic)
-            if self.minimum_level < license:
-                return True
-        return False
+        return user.is_qualified(self.minimum_level)
+
+    def application_allowed(self, user: Referee | None = None) -> bool:
+        """
+        Check if application is currently possible, for the given referee if
+        one is given.
+        """
+        if not self.registration_open():
+            return False
+        return user is None or self.is_eligible(user)
 
 
 class Accommodation(models.Model):
@@ -236,7 +268,7 @@ class Application(models.Model):
     class Status(models.IntegerChoices):
         NOSHOW = -4, _("No Show")
         DECLINED = -3, _("Declined")
-        CANCLED = -2, _("Cancled")
+        CANCELLED = -2, _("Cancelled")
         NOTSELECTED = -1, _("Not selected")
         APPLIED = 0, _("Applied")
         SELECTED = 1, _("Selected")

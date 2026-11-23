@@ -4,8 +4,8 @@ export function applicationStatusClass(status: number) {
             return "no-show"
         case -3: // Declined
             return "declined"
-        case -2: // Cancled
-            return "cancled"
+        case -2: // Cancelled
+            return "cancelled"
         case -1: // Not selected
             return "not-selected"
         case 0: // Applied
@@ -26,7 +26,7 @@ export function applicationStatusInfo(status: number) {
             return "The applied was invited but did not show up at the event."
         case -3: // Declined
             return "The invitation has been sent without considering this application."
-        case -2: // Cancled
+        case -2: // Cancelled
             return "The application was withdrawn."
         case -1: // Not selected
             return "This application is not considered in the invitation. This is however not yet confirmed."

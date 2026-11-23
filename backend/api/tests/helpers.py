@@ -36,17 +36,16 @@ def make_event(name="Test Event", start=None, location=None, **kwargs):
 
 
 def make_competition(event, invitor, category_names=("National",), **kwargs):
-    competition = Competition.objects.create(
-        event=event,
-        invitor=invitor,
-        minimum_level=RefereeLicense.objects.get(name="Regional"),
-        desired_level=RefereeLicense.objects.get(name="National B"),
-        start=event.start,
-        duration=timedelta(hours=8),
-        application_open=timezone.now() - timedelta(days=1),
-        application_close=timezone.now() + timedelta(days=10),
+    fields = {
+        "minimum_level": RefereeLicense.objects.get(name="Regional"),
+        "desired_level": RefereeLicense.objects.get(name="National B"),
+        "start": event.start,
+        "duration": timedelta(hours=8),
+        "application_open": timezone.now() - timedelta(days=1),
+        "application_close": timezone.now() + timedelta(days=10),
         **kwargs,
-    )
+    }
+    competition = Competition.objects.create(event=event, invitor=invitor, **fields)
     competition.category.set(
         CompetitionCategory.objects.filter(name__in=category_names)
     )

@@ -3,9 +3,11 @@ import NavbarBlock from "./Navbar";
 import ThemeToggle from "./ThemeToggle";
 import { useContext } from "react";
 import { UserContext } from "../layouts/MainLayout";
+import { useHasPermission } from "../features/User/hooks/useUserQueries";
 
 export function Header() {
     const { user } = useContext(UserContext);
+    const canCreateEvents = useHasPermission("competition.add_event");
     if (user.isAuthenticated) {
         return (
             <NavbarBlock>
@@ -14,6 +16,11 @@ export function Header() {
                     <Nav>
                         <Nav.Link href="/events">Events</Nav.Link>
                     </Nav>
+                    {canCreateEvents && (
+                        <Nav>
+                            <Nav.Link href="/events/new">New Event</Nav.Link>
+                        </Nav>
+                    )}
                     <Nav>
                         <Nav.Link href="/profile">Profile</Nav.Link>
                     </Nav>

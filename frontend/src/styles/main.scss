@@ -13,7 +13,7 @@ main {
 @import '../../node_modules/bootstrap/scss/bootstrap.scss';
 @import '../../node_modules/bootstrap-icons/font/bootstrap-icons.scss';
 
-.no-show, .declined, .cancled, .not-selected, .applied, .selected, .invited, .participated {
+.no-show, .declined, .cancelled, .not-selected, .applied, .selected, .invited, .participated {
     border-radius: 0.5rem;
     border-width: 3px;
     overflow: hidden;
@@ -30,7 +30,7 @@ main {
         color: $light;
     }
 }
-.not-selected, .cancled {
+.not-selected, .cancelled {
     .card-header {
         background-color: $gray-200;
         color: $gray-600;
@@ -45,7 +45,7 @@ main {
 .not-selected {
     border-color: $orange;
 }
-.cancled {
+.cancelled {
     border-color: $gray-200;
     .card-header {
         text-decoration: line-through;

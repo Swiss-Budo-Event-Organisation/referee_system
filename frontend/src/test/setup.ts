@@ -17,6 +17,9 @@ Object.defineProperty(window, "matchMedia", {
   })),
 });
 
+// jsdom does not implement scrolling, the event form scrolls to its errors.
+Object.defineProperty(window, "scrollTo", { writable: true, value: vi.fn() });
+
 // Lazy routes are transformed on first use, which can be slow.
 configure({ asyncUtilTimeout: 5000 });
 

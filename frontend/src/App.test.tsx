@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import App from "./App";
@@ -8,7 +8,7 @@ import { ACCESS_TOKEN, REFRESH_TOKEN } from "./lib/constants";
 import { makeToken } from "./test/utils";
 
 vi.mock("./lib/api", () => {
-  const api = { get: vi.fn(), post: vi.fn() };
+  const api = { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() };
   return { default: api, api, getRequest: vi.fn() };
 });
 
@@ -69,14 +69,30 @@ const responses: Record<string, unknown> = {
       { ...competition, id: 5, event: 2, info: "Veterans" },
     ],
   },
+  "/api/events/1/edit/": { id: 1, name: "Swiss Open", info: "Annual tournament", location: 1, competitions: [competition] },
+  "/api/events/1/applications/": [
+    { id: 9, user: 8, name: "Jane Roe", competition: 3, status: 0, status_display: "Applied", created: "2030-10-02T10:00:00+02:00" },
+  ],
   "/api/address/5/": { street: "Main Street", house_number: "1", area_code: "3000", city: "Bern", country: "Switzerland" },
   "api/licenses/": [
     { id: 1, name: "Regional" },
     { id: 2, name: "National B" },
   ],
-  "/api/user/7": { id: 7, username: "john", first_name: "John", last_name: "Doe", referee: { address: 5 } },
+  "/api/user/7": {
+    id: 7, username: "john", first_name: "John", last_name: "Doe", referee: { address: 5 },
+    permissions: ["competition.add_event"],
+  },
   "/api/examinations/user/": [{ id: 1, candidate: 7, license: 1, passed: true, date: "2024-05-01", note_internal: "", note_external: "" }],
   "/api/applications/": [],
+  "/api/locations/": [location],
+  "/api/categories/": [
+    { id: 1, name: "National", parent: null },
+    { id: 2, name: "Region 1", parent: 1 },
+  ],
+  "/api/referees/": [
+    { id: 7, name: "John Doe" },
+    { id: 8, name: "Jane Roe" },
+  ],
 };
 
 function renderApp(path: string) {
@@ -161,6 +177,35 @@ describe("App", () => {
     expect(await screen.findByText("Your application was received and registered.")).toBeInTheDocument();
   });
 
+  it("shows when registration is closed instead of the apply button", async () => {
+    responses["/api/events/1"] = {
+      ...events[0],
+      competitions: [{ ...competition, application_close: "2020-01-01T00:00" }],
+    };
+    try {
+      logIn();
+      renderApp("/events/1");
+      expect(await screen.findByText("Registration is closed.")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Apply" })).not.toBeInTheDocument();
+    } finally {
+      responses["/api/events/1"] = { ...events[0], competitions: [competition] };
+    }
+  });
+
+  it("shows when no license is required", async () => {
+    responses["/api/events/1"] = {
+      ...events[0],
+      competitions: [{ ...competition, minimum_level: null }],
+    };
+    try {
+      logIn();
+      renderApp("/events/1");
+      expect(await screen.findByText("License: National B (no license required)")).toBeInTheDocument();
+    } finally {
+      responses["/api/events/1"] = { ...events[0], competitions: [competition] };
+    }
+  });
+
   it("lays out several competitions in a grid", async () => {
     logIn();
     renderApp("/events/2");
@@ -169,6 +214,383 @@ describe("App", () => {
     const veterans = screen.getByText("Veterans");
     expect(juniors.closest(".row")).not.toBeNull();
     expect(juniors.closest(".row")).toBe(veterans.closest(".row"));
+  });
+
+  it("creates an event with several competition days", async () => {
+    (api.post as Mock).mockResolvedValue({ data: { id: 1, name: "Swiss Open" } });
+    logIn();
+    renderApp("/events/new");
+    const user = userEvent.setup();
+    expect(await screen.findByRole("heading", { name: "New Event" })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/^Name/), "Swiss Open");
+    await user.selectOptions(screen.getByLabelText("Venue"), "Dojo Bern");
+
+    const day1 = within(screen.getByRole("region", { name: "Day 1" }));
+    fireEvent.change(day1.getByLabelText(/^Date/), { target: { value: "2030-12-01" } });
+    await user.click(day1.getByLabelText(/^Categories/));
+    await user.type(screen.getByLabelText("Search categories"), "reg");
+    expect(screen.queryByRole("menuitemcheckbox", { name: "National" })).not.toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Search categories"));
+    const national = screen.getByRole("menuitemcheckbox", { name: "National" });
+    expect(national).toHaveAttribute("aria-checked", "false");
+    await user.click(national);
+    expect(national).toHaveAttribute("aria-checked", "true");
+    expect(national.querySelector(".bi-check-lg")).not.toHaveClass("invisible");
+    expect(day1.getByLabelText(/^Categories/)).toHaveTextContent("National");
+    await user.click(day1.getByRole("button", { name: "Now" }));
+    expect(day1.getByLabelText("Registration opens")).not.toHaveValue("");
+    await user.selectOptions(day1.getByLabelText(/^Invited by/), "John Doe");
+    await user.selectOptions(day1.getByLabelText(/^Minimum license/), "Regional");
+    expect(day1.getByLabelText(/^Desired license/)).toHaveValue("1");
+    await user.selectOptions(day1.getByLabelText(/^Desired license/), "National B");
+    await user.type(day1.getByLabelText("Referees needed"), "12");
+    expect(day1.getByText(/Sunday \(1 Dec\)/)).toBeInTheDocument();
+
+    await user.click(day1.getByRole("button", { name: /Copy to next day/ }));
+    const day2 = within(screen.getByRole("region", { name: "Day 2" }));
+    expect(day2.getByLabelText(/^Date/)).toHaveValue("2030-12-02");
+    await user.clear(day2.getByLabelText("Referees needed"));
+    await user.type(day2.getByLabelText("Referees needed"), "8");
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/events/1"));
+    expect(api.post).toHaveBeenCalledTimes(1);
+    const [url, payload] = (api.post as Mock).mock.calls[0];
+    expect(url).toBe("/api/events/create/");
+    expect(payload).toMatchObject({ name: "Swiss Open", location: 1 });
+    expect(payload.competitions).toEqual([
+      expect.objectContaining({ start: "2030-12-01T09:00", duration: "08:00:00", category: [1], invitor: 7, minimum_level: 1, desired_level: 2, referees: 12 }),
+      expect.objectContaining({ start: "2030-12-02T09:00", category: [1], referees: 8 }),
+    ]);
+  });
+
+  it("cancels the creation", async () => {
+    logIn();
+    renderApp("/events/new");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("link", { name: "Cancel" }));
+    expect(await screen.findByRole("heading", { name: "Upcoming Events" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/events");
+  });
+
+  it("creates an event and continues on its edit page", async () => {
+    (api.post as Mock).mockResolvedValue({ data: { id: 1, name: "Swiss Open" } });
+    logIn();
+    renderApp("/events/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/^Name/), "Swiss Open");
+    await user.selectOptions(screen.getByLabelText("Venue"), "Dojo Bern");
+    const day1 = within(screen.getByRole("region", { name: "Day 1" }));
+    fireEvent.change(day1.getByLabelText(/^Date/), { target: { value: "2030-12-01" } });
+    await user.click(day1.getByLabelText(/^Categories/));
+    await user.type(screen.getByLabelText("Search categories"), "national{Enter}");
+    await user.selectOptions(day1.getByLabelText(/^Invited by/), "John Doe");
+    await user.selectOptions(day1.getByLabelText(/^Desired license/), "National B");
+
+    await user.click(screen.getByRole("button", { name: "Save and edit" }));
+
+    expect(await screen.findByRole("heading", { name: "Edit Swiss Open" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/events/1/edit");
+  });
+
+  it("links to the edit page for those who may edit", async () => {
+    logIn();
+    responses["/api/events/1"] = { ...events[0], competitions: [competition], can_edit: true };
+    try {
+      renderApp("/events/1");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("link", { name: "Edit" }));
+      expect(await screen.findByRole("heading", { name: "Edit Swiss Open" })).toBeInTheDocument();
+    } finally {
+      responses["/api/events/1"] = { ...events[0], competitions: [competition] };
+    }
+  });
+
+  describe("event details", () => {
+    const applications = [
+      { id: 11, user: 9, name: "Ana Bern", competition: 3, status: 1, status_display: "Selected", created: "2030-10-01T10:00:00+02:00" },
+      { id: 9, user: 8, name: "Jane Roe", competition: 3, status: 0, status_display: "Applied", created: "2030-10-02T10:00:00+02:00" },
+      { id: 12, user: 10, name: "Joe Rex", competition: 3, status: -3, status_display: "Declined", created: "2030-10-03T10:00:00+02:00" },
+    ];
+
+    function withEvent(extra: object) {
+      const previous = { ...responses };
+      responses["/api/events/1"] = { ...events[0], competitions: [competition], ...extra };
+      responses["/api/events/1/applications/"] = applications;
+      return () => Object.assign(responses, previous);
+    }
+
+    it("shows View details and Edit to admins", async () => {
+      const restore = withEvent({ can_edit: true, can_view_details: true });
+      try {
+        logIn();
+        renderApp("/events/1");
+        expect(await screen.findByRole("link", { name: "View details" })).toHaveAttribute("href", "/events/1/details");
+        expect(screen.getByRole("link", { name: "Edit" })).toBeInTheDocument();
+      } finally {
+        restore();
+      }
+    });
+
+    it("shows only View details to observers", async () => {
+      const restore = withEvent({ can_edit: false, can_view_details: true });
+      try {
+        logIn();
+        renderApp("/events/1");
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole("link", { name: "View details" }));
+
+        const day = within(await screen.findByRole("region", { name: /^Details/ }));
+        expect(day.getByText("Invited by").nextSibling).toHaveTextContent("John Doe");
+        expect(day.getByText("Desired license").nextSibling).toHaveTextContent("National B");
+        expect(day.getByText("Mats").nextSibling).toHaveTextContent("4");
+        expect(day.getByText("National")).toBeInTheDocument();
+        const rows = day.getAllByRole("row").slice(1).map((row) => row.textContent);
+        expect(rows).toEqual([
+          expect.stringContaining("Ana BernSelected"),
+          expect.stringContaining("Jane RoeApplied"),
+          expect.stringContaining("Joe RexDeclined"),
+        ]);
+        // Nothing to edit.
+        expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: /Remove/ })).not.toBeInTheDocument();
+        expect(screen.queryByLabelText("Add an application")).not.toBeInTheDocument();
+        expect(screen.queryByRole("textbox", { name: /^Name/ })).not.toBeInTheDocument();
+      } finally {
+        restore();
+      }
+    });
+
+    it("filters the applications by referee name", async () => {
+      const restore = withEvent({ can_view_details: true });
+      try {
+        logIn();
+        renderApp("/events/1/details");
+        const user = userEvent.setup();
+        const search = await screen.findByRole("searchbox", { name: "Search referee" });
+
+        await user.type(search, "jo");
+        const day = within(screen.getByRole("region", { name: /^Details/ }));
+        expect(day.queryByText("Ana Bern")).not.toBeInTheDocument();
+        expect(day.getAllByRole("row")).toHaveLength(2);
+        expect(day.getByText("1 of 3 match")).toBeInTheDocument();
+        expect(screen.getByRole("status")).toHaveTextContent("1 application matching “jo”.");
+        expect(day.getByText("Jo", { selector: "mark" })).toBeInTheDocument();
+
+        await user.clear(search);
+        await user.type(search, "nobody");
+        expect(screen.getByRole("status")).toHaveTextContent("No application from a referee matching “nobody”.");
+        expect(day.getByText(/No referee matching “nobody” applied/)).toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: "Clear" }));
+        expect(day.getAllByRole("row")).toHaveLength(4);
+      } finally {
+        restore();
+      }
+    });
+
+    it("refuses the details without the permission", async () => {
+      const restore = withEvent({ can_view_details: false });
+      try {
+        logIn();
+        renderApp("/events/1/details");
+        expect(await screen.findByText(/don't have the permission to see the details/)).toBeInTheDocument();
+      } finally {
+        restore();
+      }
+    });
+  });
+
+  it("hides the edit link from others", async () => {
+    logIn();
+    renderApp("/events/1");
+    expect(await screen.findByRole("heading", { name: "Swiss Open" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+  });
+
+  it("edits an event and stays on the edit page", async () => {
+    const saved = { id: 1, name: "Swiss Open 2", info: "", location: 1, competitions: [{ ...competition, info: "Masters" }] };
+    (api.put as Mock).mockResolvedValue({ data: saved });
+    logIn();
+    renderApp("/events/1/edit");
+    const user = userEvent.setup();
+
+    const name = await screen.findByLabelText(/^Name/);
+    expect(name).toHaveValue("Swiss Open");
+    expect(screen.getByLabelText("Venue")).toHaveValue("1");
+    const day1 = within(screen.getByRole("region", { name: "Day 1" }));
+    expect(day1.getByLabelText(/^Date/)).toHaveValue("2030-12-01");
+    expect(day1.getByLabelText(/^End/)).toHaveValue("17:00");
+    expect(day1.getByLabelText(/^Categories/)).toHaveTextContent("National");
+    expect(day1.getByLabelText("Referees needed")).toHaveValue(12);
+
+    await user.clear(name);
+    await user.type(name, "Swiss Open 2");
+    await user.click(screen.getByRole("button", { name: "Save and continue editing" }));
+
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    const [url, payload] = (api.put as Mock).mock.calls[0];
+    expect(url).toBe("/api/events/1/edit/");
+    expect(payload).toMatchObject({ name: "Swiss Open 2", location: 1 });
+    expect(payload.competitions).toEqual([expect.objectContaining({ id: 3, start: "2030-12-01T09:00", duration: "08:00:00" })]);
+    expect(await screen.findByDisplayValue("Masters")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/events/1/edit");
+    expect(screen.getByRole("link", { name: "Cancel" })).toHaveAttribute("href", "/events/1");
+  });
+
+  it("shows the applications and adds one for any referee", async () => {
+    (api.post as Mock).mockResolvedValue({ data: {} });
+    logIn();
+    renderApp("/events/1/edit");
+    const user = userEvent.setup();
+
+    const section = within(await screen.findByRole("region", { name: /^Applications/ }));
+    expect(section.getByRole("cell", { name: "Jane Roe" })).toBeInTheDocument();
+    expect(section.getByRole("cell", { name: "Applied" })).toBeInTheDocument();
+    const select = section.getByLabelText("Add an application");
+    // Jane Roe has applied already.
+    expect(within(select).queryByRole("option", { name: "Jane Roe" })).not.toBeInTheDocument();
+    await user.selectOptions(select, "John Doe");
+    await user.click(section.getByRole("button", { name: "Add" }));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/api/events/1/applications/", { user: 7, competition: 3 }),
+    );
+    expect(await screen.findByText("John Doe was added.")).toBeInTheDocument();
+  });
+
+  it("lets admins cancel or decline but not delete an application", async () => {
+    (api.patch as Mock).mockResolvedValue({ data: {} });
+    logIn();
+    renderApp("/events/1/edit");
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Remove the application of Jane Roe" }));
+    expect(screen.getByRole("button", { name: "Set to cancelled" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete from the database" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Set to declined" }));
+
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith("/api/events/1/applications/9/", { status: -3 }));
+    expect(await screen.findByText("The application of Jane Roe was declined.")).toBeInTheDocument();
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it("lets staff delete an application after confirming", async () => {
+    (api.delete as Mock).mockResolvedValue({ data: null });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const getStaff = (getRequest as Mock).getMockImplementation()!;
+    (getRequest as Mock).mockImplementation(async (url: string, signal: AbortSignal) =>
+      url === "/api/user/7" ? { ...(responses[url] as object), is_staff: true } : getStaff(url, signal),
+    );
+    logIn();
+    renderApp("/events/1/edit");
+    const user = userEvent.setup();
+    const toggle = await screen.findByRole("button", { name: "Remove the application of Jane Roe" });
+
+    await user.click(toggle);
+    await user.click(await screen.findByRole("button", { name: "Delete from the database" }));
+    expect(api.delete).not.toHaveBeenCalled();
+
+    await user.click(toggle);
+    await user.click(await screen.findByRole("button", { name: "Delete from the database" }));
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith("/api/events/1/applications/9/"));
+    expect(await screen.findByText("The application of Jane Roe was deleted.")).toBeInTheDocument();
+    expect(confirm).toHaveBeenCalledTimes(2);
+    confirm.mockRestore();
+  });
+
+  it("refuses the edit page without the permission", async () => {
+    const getEdit = (getRequest as Mock).getMockImplementation()!;
+    (getRequest as Mock).mockImplementation(async (url: string, signal: AbortSignal) => {
+      if (url === "/api/events/1/edit/") {
+        throw Object.assign(new Error("Forbidden"), { isAxiosError: true, response: { status: 403 } });
+      }
+      return getEdit(url, signal);
+    });
+    logIn();
+    renderApp("/events/1/edit");
+    expect(await screen.findByText(/don't have the permission to edit this event/)).toBeInTheDocument();
+  });
+
+  it("highlights missing fields instead of submitting", async () => {
+    logIn();
+    renderApp("/events/new");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Add competition day" }));
+    expect(screen.getByRole("region", { name: "Day 2" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Remove Day 2" }));
+    expect(screen.queryByRole("region", { name: "Day 2" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Please correct the highlighted fields.")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Name/)).toHaveClass("is-invalid");
+    expect(screen.getByText("Choose at least one category.")).toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("refuses the event creation page without the permission", async () => {
+    const getUser7 = (getRequest as Mock).getMockImplementation()!;
+    (getRequest as Mock).mockImplementation(async (url: string, signal: AbortSignal) =>
+      url === "/api/user/7" ? { ...(responses[url] as object), permissions: [] } : getUser7(url, signal),
+    );
+    logIn();
+    renderApp("/events/new");
+    expect(await screen.findByText(/don't have the permission to create events/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "New Event" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "New Event" })).not.toBeInTheDocument();
+  });
+
+  it("shows the New Event link with the permission", async () => {
+    logIn();
+    renderApp("/events/");
+    expect(await screen.findByRole("link", { name: "New Event" })).toBeInTheDocument();
+  });
+
+  it("asks for a new location when none exist yet", async () => {
+    const getLocations = (getRequest as Mock).getMockImplementation()!;
+    (getRequest as Mock).mockImplementation(async (url: string, signal: AbortSignal) =>
+      url === "/api/locations/" ? [] : getLocations(url, signal),
+    );
+    logIn();
+    renderApp("/events/new");
+    expect(await screen.findByLabelText("New location")).toBeChecked();
+    expect(screen.getByLabelText("Existing location")).toBeDisabled();
+    expect(screen.getByLabelText(/^Venue name/)).toBeInTheDocument();
+  });
+
+  it("shows errors returned by the server", async () => {
+    (api.post as Mock).mockRejectedValue(
+      Object.assign(new Error("Bad Request"), {
+        isAxiosError: true,
+        response: { status: 400, data: { competitions: { 0: { invitor: ["Invalid referee."] } } } },
+      }),
+    );
+    logIn();
+    renderApp("/events/new");
+    const user = userEvent.setup();
+    await user.click(await screen.findByLabelText("New location"));
+    await user.type(screen.getByLabelText(/^Name/), "Zurich Cup");
+    await user.type(screen.getByLabelText(/^Venue name/), "Hall Zurich");
+    await user.type(screen.getByLabelText(/^Street/), "Hallenstrasse");
+    await user.type(screen.getByLabelText(/^City/), "Zurich");
+    const day1 = within(screen.getByRole("region", { name: "Day 1" }));
+    fireEvent.change(day1.getByLabelText(/^Date/), { target: { value: "2030-12-01" } });
+    await user.click(day1.getByLabelText(/^Categories/));
+    await user.type(screen.getByLabelText("Search categories"), "region{Enter}");
+    expect(day1.getByLabelText(/^Categories/)).toHaveTextContent("Region 1");
+    expect(window.location.pathname).toBe("/events/new");
+    await user.selectOptions(day1.getByLabelText(/^Invited by/), "Jane Roe");
+    await user.selectOptions(day1.getByLabelText(/^Minimum license/), "Regional");
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Invalid referee.")).toBeInTheDocument();
+    const [, payload] = (api.post as Mock).mock.calls[0];
+    expect(payload.new_location).toMatchObject({ name: "Hall Zurich", address: { city: "Zurich" } });
+    expect(window.location.pathname).toBe("/events/new");
   });
 
   it("shows the profile", async () => {

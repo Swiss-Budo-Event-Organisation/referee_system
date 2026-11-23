@@ -40,3 +40,15 @@ class RefereeRoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = RefereeRole
         fields = ["id", "name", "order"]
+
+
+class RefereeOptionSerializer(serializers.ModelSerializer):
+    """
+    Just enough of a referee to pick them in a form.
+    """
+
+    name = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Referee
+        fields = ["id", "name"]

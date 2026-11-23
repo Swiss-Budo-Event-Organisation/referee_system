@@ -1,3 +1,4 @@
+from datetime import date
 from datetime import timedelta
 
 from django.contrib.auth.models import Group
@@ -29,7 +30,7 @@ class TestDefaultCategoriesAndRoles(APITestCase):
         self.assertEqual(region1.observers.name, "Region 1 Observer")
         national = CompetitionCategory.objects.get(name="National")
         self.assertEqual(national.admins.name, "National Admin")
-        self.assertIsNone(national.observers)
+        self.assertEqual(national.observers.name, "National Observer")
         self.assertTrue(CompetitionCategory.objects.filter(name="Adapted Judo"))
         self.assertTrue(CompetitionCategory.objects.filter(name="International"))
 
@@ -129,6 +130,20 @@ class TestCompetitionApi(PermissionTestCase):
         data["category"] = [self.region2.pk]
         self.assertEqual(self.client.post(url, data).status_code, 403)
 
+    def test_staff_changes_any_competition(self):
+        staff = _user("staff")
+        staff.is_staff = True
+        staff.save()
+        self.client.force_authenticate(staff)
+        url = reverse("competition-detail", args=[self.comp2.pk])
+        response = self.client.patch(url, {"info": "x", "category": [self.region1.pk]})
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.comp2.refresh_from_db()
+        self.assertEqual(self.comp2.info, "x")
+        self.assertEqual(list(self.comp2.category.all()), [self.region1])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
     def test_observer_cannot_change(self):
         self.client.force_authenticate(self.observer1)
         url = reverse("competition-detail", args=[self.comp1.pk])
@@ -154,6 +169,8 @@ class TestCompetitionApi(PermissionTestCase):
 
 class TestApplicationApi(PermissionTestCase):
     def test_user_creates_and_changes_own_application(self):
+        Examination.create(self.other, license=self.regional, date=date(2024, 5, 1))
+        self.other.groups.add(self.region2.members)
         self.client.force_authenticate(self.other)
         response = self.client.post(
             reverse("application-create-list"),

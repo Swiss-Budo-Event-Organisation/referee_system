@@ -5,6 +5,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from api.views import CompetitionApplicationsView
 from api.views import CreateCompetitionView
+from api.views import CreateEventWithCompetitionsView
 from api.views import CreateExaminationView
 from api.views import CreateListApplicationView
 from api.views import CreateUserView
@@ -14,11 +15,16 @@ from api.views import DetailLicenseView
 from api.views import DetailLocationView
 from api.views import DetailOwnApplicationView
 from api.views import DetailUserView
+from api.views import EditEventWithCompetitionsView
+from api.views import EventApplicationDetailView
+from api.views import EventApplicationsView
+from api.views import ListCompetitionCategoriesView
 from api.views import ListEventsView
 from api.views import ListExaminationsView
 from api.views import ListFurtureEventsView
 from api.views import ListLicenseView
 from api.views import ListLocationsView
+from api.views import ListRefereesView
 from api.views import ManageApplicationView
 from api.views import UpdateAddressView
 from api.views import UpdateUserView
@@ -31,8 +37,28 @@ urlpatterns = [
     path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("auth/", include("rest_framework.urls", namespace="rest_framework")),
     path("events/", ListEventsView.as_view(), name="event-list"),
+    path(
+        "events/create/",
+        CreateEventWithCompetitionsView.as_view(),
+        name="event-create",
+    ),
     path("events/future/", ListFurtureEventsView.as_view(), name="event-list-future"),
     path("events/<int:pk>/", DetailEventView.as_view(), name="event-detail"),
+    path(
+        "events/<int:pk>/edit/",
+        EditEventWithCompetitionsView.as_view(),
+        name="event-edit",
+    ),
+    path(
+        "events/<int:pk>/applications/",
+        EventApplicationsView.as_view(),
+        name="event-applications",
+    ),
+    path(
+        "events/<int:pk>/applications/<int:application>/",
+        EventApplicationDetailView.as_view(),
+        name="event-application-detail",
+    ),
     path("competition/", CreateCompetitionView.as_view(), name="competition-create"),
     path(
         "competition/<int:pk>/applications/",
@@ -44,6 +70,8 @@ urlpatterns = [
         DetailCompetitionView.as_view(),
         name="competition-detail",
     ),
+    path("categories/", ListCompetitionCategoriesView.as_view(), name="category-list"),
+    path("referees/", ListRefereesView.as_view(), name="referee-list"),
     path("locations/", ListLocationsView.as_view(), name="locations-list"),
     path("locations/<int:pk>/", DetailLocationView.as_view(), name="locations-detail"),
     path("licenses/", ListLicenseView.as_view(), name="license-list"),
