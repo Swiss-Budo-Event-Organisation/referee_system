@@ -8,7 +8,7 @@ from django.db import models
 class Migration(migrations.Migration):
     dependencies = [
         ("auth", "0012_alter_user_first_name_max_length"),
-        ("referee", "0007_default_groups"),
+        ("referee", "0006_default_referee_licenses"),
     ]
 
     operations = [

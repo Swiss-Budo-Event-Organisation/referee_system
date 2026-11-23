@@ -1,16 +1,19 @@
 from django.contrib.auth.management import create_permissions
 from django.db import migrations
 
-# Competition categories and the groups administering / observing them.
-# The names match the groups created in referee.0007_default_groups.
-CATEGORIES = {
-    "International": {"admins": "International Admin", "observers": None},
-    "National": {"admins": "National Admin", "observers": None},
-    "Region 1": {"admins": "Region 1 Admin", "observers": "Region 1 Observer"},
-    "Region 2": {"admins": "Region 2 Admin", "observers": "Region 2 Observer"},
-    "Region 3": {"admins": "Region 3 Admin", "observers": "Region 3 Observer"},
-    "Adapted Judo": {"admins": "Adapted Judo Admin", "observers": None},
-}
+from competition.groups import create_category_groups
+from competition.groups import group_names
+
+# Default competition categories. Each gets a member, an admin and an
+# observer group (see competition.groups).
+CATEGORIES = [
+    "International",
+    "National",
+    "Region 1",
+    "Region 2",
+    "Region 3",
+    "Adapted Judo",
+]
 
 # Examiner groups and the licenses they may record examinations for.
 EXAMINERS = {
@@ -20,16 +23,9 @@ EXAMINERS = {
 }
 EXAMINER_PERMISSIONS = ["add_examination", "view_examination"]
 
-LICENSE_ADMIN_GROUP = "National Admin"
+# The admins of this category may also add and change licenses.
+LICENSE_ADMIN_CATEGORY = "National"
 LICENSE_ADMIN_PERMISSIONS = ["add_refereelicense", "change_refereelicense"]
-
-# Category admins must not edit categories, as that would let them change
-# which group administers a category.
-CATEGORY_PERMISSIONS = [
-    "add_competitioncategory",
-    "change_competitioncategory",
-    "delete_competitioncategory",
-]
 
 
 def _perms(Permission, db_alias, codenames):
@@ -39,6 +35,8 @@ def _perms(Permission, db_alias, codenames):
 def forwards(apps, schema_editor):
     db_alias = schema_editor.connection.alias
 
+    # Permissions are normally created after all migrations ran (post_migrate);
+    # make sure they exist now so they can be assigned on a fresh database.
     for app_config in apps.get_app_configs():
         app_config.models_module = True
         create_permissions(app_config, apps=apps, verbosity=0, using=db_alias)
@@ -50,19 +48,12 @@ def forwards(apps, schema_editor):
     RefereeLicense = apps.get_model("referee", "RefereeLicense")
     groups = Group.objects.using(db_alias)
 
-    category_perms = _perms(Permission, db_alias, CATEGORY_PERMISSIONS)
-    for name, roles in CATEGORIES.items():
-        category, _ = CompetitionCategory.objects.using(db_alias).get_or_create(
-            name=name
-        )
-        for field, group_name in roles.items():
-            if group_name is None or getattr(category, f"{field}_id") is not None:
-                continue
-            group, _ = groups.get_or_create(name=group_name)
-            setattr(category, field, group)
-        category.save()
-        if category.admins is not None:
-            category.admins.permissions.remove(*category_perms)
+    # The post_save hook does not run for historical models, so create the
+    # groups here, also for categories that existed before.
+    for name in CATEGORIES:
+        CompetitionCategory.objects.using(db_alias).get_or_create(name=name)
+    for category in CompetitionCategory.objects.using(db_alias).all():
+        create_category_groups(category, Group, Permission, using=db_alias)
 
     examiner_perms = _perms(Permission, db_alias, EXAMINER_PERMISSIONS)
     for group_name, license_names in EXAMINERS.items():
@@ -72,7 +63,11 @@ def forwards(apps, schema_editor):
             name__in=license_names, examiners__isnull=True
         ).update(examiners=group)
 
-    license_admin, _ = groups.get_or_create(name=LICENSE_ADMIN_GROUP)
+    license_admin = (
+        CompetitionCategory.objects.using(db_alias)
+        .get(name=LICENSE_ADMIN_CATEGORY)
+        .admins
+    )
     license_admin.permissions.add(
         *_perms(Permission, db_alias, LICENSE_ADMIN_PERMISSIONS)
     )
@@ -81,24 +76,22 @@ def forwards(apps, schema_editor):
 def backwards(apps, schema_editor):
     db_alias = schema_editor.connection.alias
     Group = apps.get_model("auth", "Group")
-    Permission = apps.get_model("auth", "Permission")
     CompetitionCategory = apps.get_model("competition", "CompetitionCategory")
 
-    license_admin = Group.objects.using(db_alias).filter(name=LICENSE_ADMIN_GROUP)
-    for group in license_admin:
-        group.permissions.remove(
-            *_perms(Permission, db_alias, LICENSE_ADMIN_PERMISSIONS)
-        )
     Group.objects.using(db_alias).filter(name__in=EXAMINERS.keys()).delete()
     CompetitionCategory.objects.using(db_alias).filter(
-        name__in=CATEGORIES.keys(), competition__isnull=True
+        name__in=CATEGORIES, competition__isnull=True
+    ).delete()
+    Group.objects.using(db_alias).filter(
+        name__in=[group for name in CATEGORIES for group in group_names(name)]
     ).delete()
 
 
 class Migration(migrations.Migration):
     dependencies = [
+        ("auth", "0012_alter_user_first_name_max_length"),
+        ("contenttypes", "0002_remove_content_type_name"),
         ("competition", "0005_competitioncategory_groups"),
-        ("referee", "0007_default_groups"),
         ("referee", "0008_refereelicense_examiners"),
     ]
 

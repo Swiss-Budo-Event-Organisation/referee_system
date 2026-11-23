@@ -30,7 +30,7 @@ class TestDefaultCategoriesAndRoles(APITestCase):
         self.assertEqual(region1.observers.name, "Region 1 Observer")
         national = CompetitionCategory.objects.get(name="National")
         self.assertEqual(national.admins.name, "National Admin")
-        self.assertIsNone(national.observers)
+        self.assertEqual(national.observers.name, "National Observer")
         self.assertTrue(CompetitionCategory.objects.filter(name="Adapted Judo"))
         self.assertTrue(CompetitionCategory.objects.filter(name="International"))
 

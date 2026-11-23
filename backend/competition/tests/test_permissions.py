@@ -39,7 +39,7 @@ class TestCompetitionPermissions(TestCase):
         self.assertEqual(self.region1.admins.name, "Region 1 Admin")
         self.assertEqual(self.region1.observers.name, "Region 1 Observer")
         self.assertEqual(self.national.admins.name, "National Admin")
-        self.assertIsNone(self.national.observers)
+        self.assertEqual(self.national.observers.name, "National Observer")
 
     def test_administered_categories(self):
         self.assertEqual(
