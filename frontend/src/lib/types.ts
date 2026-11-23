@@ -10,6 +10,7 @@ export type EventType = {
     modified: string;
     start: string;
     end: string | null;
+    can_edit?: boolean;
 }
 export type LocationType = {
     id: number;

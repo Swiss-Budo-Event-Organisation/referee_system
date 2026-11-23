@@ -1,6 +1,9 @@
 import { getRequest } from "../../../lib/api";
+import { CompetitionType } from "../../../lib/types";
 
 export type CompetitionDayForm = {
+    /** Id of a saved competition day, null for a new one. */
+    id: number | null;
     key: number;
     date: string;
     startTime: string;
@@ -56,6 +59,7 @@ let nextKey = 1;
 export function emptyCompetitionDay(): CompetitionDayForm {
     return {
         key: nextKey++,
+        id: null,
         date: "",
         startTime: "09:00",
         endTime: "17:00",
@@ -93,6 +97,74 @@ export function emptyEventForm(): EventForm {
     };
 }
 
+/** An event as loaded from /api/events/{id}/edit/. */
+export type EditableEventType = {
+    id: number;
+    name: string;
+    info: string;
+    location: number;
+    competitions: CompetitionType[];
+};
+
+/** Minutes of a Django duration such as "09:30:00" or "1 02:00:00". */
+function durationMinutes(value: string): number {
+    const [days, time] = value.includes(" ") ? value.split(" ") : ["0", value];
+    const [hours, mins] = time.split(":").map(Number);
+    return Number(days) * 24 * 60 + hours * 60 + mins;
+}
+
+function addMinutes(time: string, add: number): string {
+    // Times are within one day; longer competitions end at midnight.
+    const total = Math.min(minutes(time) + add, 23 * 60 + 59);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+}
+
+/**
+ * The local "YYYY-MM-DDTHH:MM" part of a date time from the server, which
+ * sends it in the local time zone of the competitions.
+ */
+function localDateTime(value: string | null): string {
+    return value ? value.slice(0, 16) : "";
+}
+
+function optionalId(value: number | null): string {
+    return value === null ? "" : String(value);
+}
+
+/** The edit form for an event loaded from the server. */
+export function eventToForm(event: EditableEventType): EventForm {
+    return {
+        ...emptyEventForm(),
+        name: event.name,
+        info: event.info,
+        locationMode: "existing",
+        location: String(event.location),
+        competitions: event.competitions.map((competition) => {
+            const startTime = competition.start.slice(11, 16);
+            return {
+                ...emptyCompetitionDay(),
+                id: competition.id,
+                date: competition.start.slice(0, 10),
+                startTime,
+                endTime: addMinutes(startTime, durationMinutes(competition.duration)),
+                category: [...competition.category],
+                invitor: String(competition.invitor),
+                headReferee: optionalId(competition.head_referee),
+                minimumLevel: optionalId(competition.minimum_level),
+                desiredLevel: String(competition.desired_level),
+                competitionFields: optionalId(competition.competition_fields),
+                referees: optionalId(competition.referees),
+                observers: optionalId(competition.observers),
+                application: competition.application,
+                applicationOpen: localDateTime(competition.application_open),
+                applicationClose: localDateTime(competition.application_close),
+                info: competition.info,
+            };
+        }),
+    };
+}
+
 export function emptyErrors(): EventFormErrors {
     return { general: [], event: {}, newLocation: {}, competitions: {} };
 }
@@ -114,6 +186,7 @@ export function nextCompetitionDay(day: CompetitionDayForm): CompetitionDayForm 
     return {
         ...day,
         key: nextKey++,
+        id: null,
         category: [...day.category],
         date: addDays(day.date, 1),
     };
@@ -229,6 +302,7 @@ export function buildEventPayload(form: EventForm) {
         info: form.info,
         ...location,
         competitions: form.competitions.map((day) => ({
+            id: day.id,
             start: `${day.date}T${day.startTime}`,
             duration: duration(day.startTime, day.endTime),
             category: day.category,
@@ -344,4 +418,23 @@ export async function getCategories(signal: AbortSignal) {
 
 export async function getReferees(signal: AbortSignal) {
     return getRequest("/api/referees/", signal);
+}
+
+export async function getEditableEvent(pk: number, signal: AbortSignal): Promise<EditableEventType> {
+    return getRequest(`/api/events/${pk}/edit/`, signal);
+}
+
+/** An application as seen by the admins of an event. */
+export type EventApplicationType = {
+    id: number;
+    user: number;
+    name: string;
+    competition: number;
+    status: number;
+    status_display: string;
+    created: string;
+};
+
+export async function getEventApplications(pk: number, signal: AbortSignal): Promise<EventApplicationType[]> {
+    return getRequest(`/api/events/${pk}/applications/`, signal);
 }

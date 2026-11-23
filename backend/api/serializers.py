@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
+from django.db import transaction
 from rest_framework import serializers
 
-from referee.models import Referee
 from referee.serializers import RefereeSerializer
 
 
@@ -29,27 +29,42 @@ class UserSerializer(serializers.ModelSerializer):
             "password",
             "referee",
             "permissions",
+            "is_staff",
         ]
-        extra_kwargs = {"password": {"write_only": True}}
+        extra_kwargs = {
+            "password": {"write_only": True},
+            "is_staff": {"read_only": True},
+        }
 
     def get_permissions(self, user) -> list[str]:
         """Model permissions, e.g. "competition.add_event", for the frontend."""
         return sorted(user.get_all_permissions())
 
+    @staticmethod
+    def _update_referee(user, referee_data):
+        # The referee profile is created with the user (referee.signals).
+        referee = user.referee
+        for field, value in referee_data.items():
+            setattr(referee, field, value)
+        referee.save()
+
+    @transaction.atomic
     def create(self, validated_data):
-        referee_data = validated_data.pop("referee")
+        referee_data = validated_data.pop("referee", None)
         user = User.objects.create_user(**validated_data)
-        referee = Referee.objects.create(user=user, **referee_data)  # noqa: F841
+        if referee_data:
+            self._update_referee(user, referee_data)
         return user
 
-    def update(self, validated_data):
-        user_id = validated_data.pop("id")
-        referee_data = validated_data.pop("referee")
-        user = (  # noqa: F841
-            User.objects.filter(pk=user_id).select_for_update().update(**validated_data)
-        )
-        referee = (  # noqa: F841
-            Referee.objects.filter(pk=user_id)
-            .select_for_update()
-            .update(**referee_data)
-        )
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        referee_data = validated_data.pop("referee", None)
+        password = validated_data.pop("password", None)
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        if referee_data:
+            self._update_referee(instance, referee_data)
+        return instance

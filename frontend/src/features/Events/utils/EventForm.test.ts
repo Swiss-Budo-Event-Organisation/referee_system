@@ -6,6 +6,7 @@ import {
     duration,
     emptyCompetitionDay,
     emptyEventForm,
+    eventToForm,
     hasErrors,
     nextCompetitionDay,
     nowLocal,
@@ -120,6 +121,7 @@ describe("buildEventPayload", () => {
             location: 3,
             competitions: [
                 {
+                    id: null,
                     start: "2030-12-01T08:30",
                     duration: "09:30:00",
                     category: [1, 2],
@@ -154,6 +156,70 @@ describe("buildEventPayload", () => {
         });
         expect(payload.competitions[0].application_open).toBeNull();
         expect(payload.competitions[0].application_close).toBeNull();
+    });
+});
+
+describe("eventToForm", () => {
+    const competition = {
+        id: 4,
+        event: 1,
+        category: [1, 2],
+        competition_fields: null,
+        invitor: 7,
+        desired_level: 2,
+        minimum_level: null,
+        start: "2030-12-01T08:30:00+01:00",
+        info: "Seniors",
+        observers: 3,
+        referees: null,
+        duration: "09:30:00",
+        application: true,
+        application_open: "2030-10-01T00:00:00+02:00",
+        application_close: null,
+        head_referee: 8,
+        modified: "2030-01-01T00:00:00+01:00",
+    };
+
+    it("turns a saved event into the edit form", () => {
+        const form = eventToForm({ id: 1, name: "Swiss Open", info: "", location: 3, competitions: [competition] });
+        expect(form).toMatchObject({ name: "Swiss Open", locationMode: "existing", location: "3" });
+        const [day] = form.competitions;
+        expect(day).toMatchObject({
+            id: 4,
+            date: "2030-12-01",
+            startTime: "08:30",
+            endTime: "18:00",
+            category: [1, 2],
+            invitor: "7",
+            headReferee: "8",
+            minimumLevel: "",
+            desiredLevel: "2",
+            competitionFields: "",
+            observers: "3",
+            applicationOpen: "2030-10-01T00:00",
+            applicationClose: "",
+            info: "Seniors",
+        });
+        // Sent back unchanged.
+        expect(buildEventPayload(form).competitions[0]).toMatchObject({
+            id: 4,
+            start: "2030-12-01T08:30",
+            duration: "09:30:00",
+            minimum_level: null,
+        });
+    });
+
+    it("ends long competitions at midnight", () => {
+        const form = eventToForm({
+            id: 1, name: "Marathon", info: "", location: 3,
+            competitions: [{ ...competition, duration: "1 02:00:00" }],
+        });
+        expect(form.competitions[0].endTime).toBe("23:59");
+    });
+
+    it("copies a saved day as a new one", () => {
+        const form = eventToForm({ id: 1, name: "Cup", info: "", location: 3, competitions: [competition] });
+        expect(nextCompetitionDay(form.competitions[0]).id).toBeNull();
     });
 });
 

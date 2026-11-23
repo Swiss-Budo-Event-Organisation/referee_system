@@ -97,9 +97,12 @@ def can_create_event(user, categories: Iterable[CompetitionCategory]) -> bool:
     Staff members may; others need the permission to add events and must be
     in the admin group of at least one of the categories.
     """
-    if not can_create_events(user):
-        return False
-    if user.is_staff or user.is_superuser:
+    return can_create_events(user) and administers_any(user, categories)
+
+
+def administers_any(user, categories: Iterable[CompetitionCategory]) -> bool:
+    """Is the user staff or in the admin group of one of the categories?"""
+    if user.is_authenticated and (user.is_staff or user.is_superuser):
         return True
     pks = {category.pk for category in categories}
     return administered_categories(user).filter(pk__in=pks).exists()

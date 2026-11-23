@@ -12,9 +12,11 @@ import { useCategoriesQuery, useLocationsQuery, useRefereesQuery } from "../hook
 import {
     buildEventPayload,
     CompetitionDayForm,
+    EditableEventType,
     emptyCompetitionDay,
     emptyErrors,
     emptyEventForm,
+    eventToForm,
     EventForm as EventFormState,
     EventFormErrors,
     hasErrors,
@@ -26,8 +28,19 @@ import {
 import CompetitionDayFields from "./CompetitionDayFields";
 import FormField from "./FormField";
 
-function EventForm() {
-    const [form, setForm] = useState<EventFormState>(emptyEventForm);
+/** Where to go after saving: the event's detail page or its edit page. */
+type NextPage = "detail" | "edit";
+
+type SaveRequest = { payload: ReturnType<typeof buildEventPayload>; next: NextPage };
+
+type Props = {
+    /** The event to edit; without it a new event is created. */
+    event?: EditableEventType;
+};
+
+function EventForm({ event }: Props) {
+    const editing = event !== undefined;
+    const [form, setForm] = useState<EventFormState>(() => (event ? eventToForm(event) : emptyEventForm()));
     const [errors, setErrors] = useState<EventFormErrors>(emptyErrors);
     const navigate = useNavigate();
     const queryClient = useQueryClient();
@@ -42,20 +55,33 @@ function EventForm() {
     const locationMode = noLocations ? "new" : form.locationMode;
 
     const mutation = useMutation({
-        mutationFn: (payload: ReturnType<typeof buildEventPayload>) =>
-            api.post("/api/events/create/", payload).then((res) => res.data),
-        onSuccess: (event) => {
+        mutationFn: ({ payload }: SaveRequest): Promise<EditableEventType> =>
+            (editing
+                ? api.put(`/api/events/${event.id}/edit/`, payload)
+                : api.post("/api/events/create/", payload)
+            ).then((res) => res.data),
+        onSuccess: (saved, { next }) => {
             queryClient.invalidateQueries({ queryKey: ["events"] });
+            queryClient.invalidateQueries({ queryKey: ["event", saved.id] });
             queryClient.invalidateQueries({ queryKey: ["locations"] });
-            toast.success(`${event.name} was created.`);
-            navigate(`/events/${event.id}`);
+            toast.success(editing ? `${saved.name} was saved.` : `${saved.name} was created.`);
+            if (next === "detail") {
+                navigate(`/events/${saved.id}`);
+            } else if (editing) {
+                // Stay here; new days now have an id.
+                setForm(eventToForm(saved));
+                setErrors(emptyErrors());
+            } else {
+                navigate(`/events/${saved.id}/edit`);
+            }
         },
         onError: (error) => {
             if (isAxiosError(error) && error.response?.status === 400) {
                 setErrors(parseServerErrors(error.response.data));
             } else if (isAxiosError(error) && error.response?.status === 403) {
                 const detail = error.response.data?.detail;
-                setErrors({ ...emptyErrors(), general: [detail ?? "You may not create this event."] });
+                const fallback = editing ? "You may not edit this event." : "You may not create this event.";
+                setErrors({ ...emptyErrors(), general: [detail ?? fallback] });
             } else {
                 setErrors({ ...emptyErrors(), general: ["The event could not be saved. Please try again."] });
             }
@@ -131,8 +157,12 @@ function EventForm() {
             window.scrollTo({ top: 0, behavior: "smooth" });
             return;
         }
-        mutation.mutate(buildEventPayload(current));
+        // Each submit button names the page to show after saving.
+        const submitter = (e.nativeEvent as SubmitEvent).submitter;
+        const next: NextPage = submitter?.dataset.next === "edit" ? "edit" : "detail";
+        mutation.mutate({ payload: buildEventPayload(current), next });
     }
+
 
     const errorCount =
         Object.keys(errors.event).length +
@@ -141,7 +171,7 @@ function EventForm() {
 
     return (
         <Form noValidate onSubmit={handleSubmit} className="mb-5">
-            <h1 className="mb-4">New Event</h1>
+            <h1 className="mb-4">{editing ? `Edit ${event.name}` : "New Event"}</h1>
 
             {(errors.general.length > 0 || errorCount > 0) && (
                 <Alert variant="danger">
@@ -238,10 +268,15 @@ function EventForm() {
                 <i className="bi bi-plus-lg" aria-hidden="true" /> Add competition day
             </Button>
 
-            <div className="d-flex justify-content-end gap-2 border-top pt-3">
-                <Link to="/events" className="btn btn-outline-secondary">Cancel</Link>
-                <Button type="submit" disabled={disabled}>
-                    {disabled ? "Saving…" : "Create event"}
+            <div className="d-flex flex-wrap justify-content-end gap-2 border-top pt-3">
+                <Link to={editing ? `/events/${event.id}` : "/events"} className="btn btn-outline-secondary me-auto">
+                    Cancel
+                </Link>
+                <Button type="submit" variant="outline-primary" disabled={disabled} data-next="edit">
+                    {editing ? "Save and continue editing" : "Save and edit"}
+                </Button>
+                <Button type="submit" disabled={disabled} data-next="detail">
+                    {disabled ? "Saving…" : "Save"}
                 </Button>
             </div>
         </Form>

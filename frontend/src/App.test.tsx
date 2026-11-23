@@ -8,7 +8,7 @@ import { ACCESS_TOKEN, REFRESH_TOKEN } from "./lib/constants";
 import { makeToken } from "./test/utils";
 
 vi.mock("./lib/api", () => {
-  const api = { get: vi.fn(), post: vi.fn() };
+  const api = { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() };
   return { default: api, api, getRequest: vi.fn() };
 });
 
@@ -69,6 +69,10 @@ const responses: Record<string, unknown> = {
       { ...competition, id: 5, event: 2, info: "Veterans" },
     ],
   },
+  "/api/events/1/edit/": { id: 1, name: "Swiss Open", info: "Annual tournament", location: 1, competitions: [competition] },
+  "/api/events/1/applications/": [
+    { id: 9, user: 8, name: "Jane Roe", competition: 3, status: 0, status_display: "Applied", created: "2030-10-02T10:00:00+02:00" },
+  ],
   "/api/address/5/": { street: "Main Street", house_number: "1", area_code: "3000", city: "Bern", country: "Switzerland" },
   "api/licenses/": [
     { id: 1, name: "Regional" },
@@ -249,7 +253,7 @@ describe("App", () => {
     await user.clear(day2.getByLabelText("Referees needed"));
     await user.type(day2.getByLabelText("Referees needed"), "8");
 
-    await user.click(screen.getByRole("button", { name: "Create event" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(window.location.pathname).toBe("/events/1"));
     expect(api.post).toHaveBeenCalledTimes(1);
@@ -262,6 +266,159 @@ describe("App", () => {
     ]);
   });
 
+  it("cancels the creation", async () => {
+    logIn();
+    renderApp("/events/new");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("link", { name: "Cancel" }));
+    expect(await screen.findByRole("heading", { name: "Upcoming Events" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/events");
+  });
+
+  it("creates an event and continues on its edit page", async () => {
+    (api.post as Mock).mockResolvedValue({ data: { id: 1, name: "Swiss Open" } });
+    logIn();
+    renderApp("/events/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/^Name/), "Swiss Open");
+    await user.selectOptions(screen.getByLabelText("Venue"), "Dojo Bern");
+    const day1 = within(screen.getByRole("region", { name: "Day 1" }));
+    fireEvent.change(day1.getByLabelText(/^Date/), { target: { value: "2030-12-01" } });
+    await user.click(day1.getByLabelText(/^Categories/));
+    await user.type(screen.getByLabelText("Search categories"), "national{Enter}");
+    await user.selectOptions(day1.getByLabelText(/^Invited by/), "John Doe");
+    await user.selectOptions(day1.getByLabelText(/^Desired license/), "National B");
+
+    await user.click(screen.getByRole("button", { name: "Save and edit" }));
+
+    expect(await screen.findByRole("heading", { name: "Edit Swiss Open" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/events/1/edit");
+  });
+
+  it("links to the edit page for those who may edit", async () => {
+    logIn();
+    responses["/api/events/1"] = { ...events[0], competitions: [competition], can_edit: true };
+    try {
+      renderApp("/events/1");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("link", { name: "Edit" }));
+      expect(await screen.findByRole("heading", { name: "Edit Swiss Open" })).toBeInTheDocument();
+    } finally {
+      responses["/api/events/1"] = { ...events[0], competitions: [competition] };
+    }
+  });
+
+  it("hides the edit link from others", async () => {
+    logIn();
+    renderApp("/events/1");
+    expect(await screen.findByRole("heading", { name: "Swiss Open" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+  });
+
+  it("edits an event and stays on the edit page", async () => {
+    const saved = { id: 1, name: "Swiss Open 2", info: "", location: 1, competitions: [{ ...competition, info: "Masters" }] };
+    (api.put as Mock).mockResolvedValue({ data: saved });
+    logIn();
+    renderApp("/events/1/edit");
+    const user = userEvent.setup();
+
+    const name = await screen.findByLabelText(/^Name/);
+    expect(name).toHaveValue("Swiss Open");
+    expect(screen.getByLabelText("Venue")).toHaveValue("1");
+    const day1 = within(screen.getByRole("region", { name: "Day 1" }));
+    expect(day1.getByLabelText(/^Date/)).toHaveValue("2030-12-01");
+    expect(day1.getByLabelText(/^End/)).toHaveValue("17:00");
+    expect(day1.getByLabelText(/^Categories/)).toHaveTextContent("National");
+    expect(day1.getByLabelText("Referees needed")).toHaveValue(12);
+
+    await user.clear(name);
+    await user.type(name, "Swiss Open 2");
+    await user.click(screen.getByRole("button", { name: "Save and continue editing" }));
+
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    const [url, payload] = (api.put as Mock).mock.calls[0];
+    expect(url).toBe("/api/events/1/edit/");
+    expect(payload).toMatchObject({ name: "Swiss Open 2", location: 1 });
+    expect(payload.competitions).toEqual([expect.objectContaining({ id: 3, start: "2030-12-01T09:00", duration: "08:00:00" })]);
+    expect(await screen.findByDisplayValue("Masters")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/events/1/edit");
+    expect(screen.getByRole("link", { name: "Cancel" })).toHaveAttribute("href", "/events/1");
+  });
+
+  it("shows the applications and adds one for any referee", async () => {
+    (api.post as Mock).mockResolvedValue({ data: {} });
+    logIn();
+    renderApp("/events/1/edit");
+    const user = userEvent.setup();
+
+    const section = within(await screen.findByRole("region", { name: /^Applications/ }));
+    expect(section.getByRole("cell", { name: "Jane Roe" })).toBeInTheDocument();
+    expect(section.getByRole("cell", { name: "Applied" })).toBeInTheDocument();
+    const select = section.getByLabelText("Add an application");
+    // Jane Roe has applied already.
+    expect(within(select).queryByRole("option", { name: "Jane Roe" })).not.toBeInTheDocument();
+    await user.selectOptions(select, "John Doe");
+    await user.click(section.getByRole("button", { name: "Add" }));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/api/events/1/applications/", { user: 7, competition: 3 }),
+    );
+    expect(await screen.findByText("John Doe was added.")).toBeInTheDocument();
+  });
+
+  it("lets admins cancel or decline but not delete an application", async () => {
+    (api.patch as Mock).mockResolvedValue({ data: {} });
+    logIn();
+    renderApp("/events/1/edit");
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Remove the application of Jane Roe" }));
+    expect(screen.getByRole("button", { name: "Set to cancelled" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete from the database" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Set to declined" }));
+
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith("/api/events/1/applications/9/", { status: -3 }));
+    expect(await screen.findByText("The application of Jane Roe was declined.")).toBeInTheDocument();
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it("lets staff delete an application after confirming", async () => {
+    (api.delete as Mock).mockResolvedValue({ data: null });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const getStaff = (getRequest as Mock).getMockImplementation()!;
+    (getRequest as Mock).mockImplementation(async (url: string, signal: AbortSignal) =>
+      url === "/api/user/7" ? { ...(responses[url] as object), is_staff: true } : getStaff(url, signal),
+    );
+    logIn();
+    renderApp("/events/1/edit");
+    const user = userEvent.setup();
+    const toggle = await screen.findByRole("button", { name: "Remove the application of Jane Roe" });
+
+    await user.click(toggle);
+    await user.click(await screen.findByRole("button", { name: "Delete from the database" }));
+    expect(api.delete).not.toHaveBeenCalled();
+
+    await user.click(toggle);
+    await user.click(await screen.findByRole("button", { name: "Delete from the database" }));
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith("/api/events/1/applications/9/"));
+    expect(await screen.findByText("The application of Jane Roe was deleted.")).toBeInTheDocument();
+    expect(confirm).toHaveBeenCalledTimes(2);
+    confirm.mockRestore();
+  });
+
+  it("refuses the edit page without the permission", async () => {
+    const getEdit = (getRequest as Mock).getMockImplementation()!;
+    (getRequest as Mock).mockImplementation(async (url: string, signal: AbortSignal) => {
+      if (url === "/api/events/1/edit/") {
+        throw Object.assign(new Error("Forbidden"), { isAxiosError: true, response: { status: 403 } });
+      }
+      return getEdit(url, signal);
+    });
+    logIn();
+    renderApp("/events/1/edit");
+    expect(await screen.findByText(/don't have the permission to edit this event/)).toBeInTheDocument();
+  });
+
   it("highlights missing fields instead of submitting", async () => {
     logIn();
     renderApp("/events/new");
@@ -271,7 +428,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Remove Day 2" }));
     expect(screen.queryByRole("region", { name: "Day 2" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Create event" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText("Please correct the highlighted fields.")).toBeInTheDocument();
     expect(screen.getByLabelText(/^Name/)).toHaveClass("is-invalid");
@@ -333,7 +490,7 @@ describe("App", () => {
     await user.selectOptions(day1.getByLabelText(/^Invited by/), "Jane Roe");
     await user.selectOptions(day1.getByLabelText(/^Minimum license/), "Regional");
 
-    await user.click(screen.getByRole("button", { name: "Create event" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText("Invalid referee.")).toBeInTheDocument();
     const [, payload] = (api.post as Mock).mock.calls[0];

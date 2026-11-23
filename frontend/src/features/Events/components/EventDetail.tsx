@@ -1,5 +1,6 @@
 import { ReactNode, } from "react"
 import { Container, Row } from "react-bootstrap";
+import { Link } from "react-router-dom";
 import { LocationAddress } from "../../../components/Location";
 import CompetitionDetail from "./CompetitionDetail";
 import { CompetitionType } from "../../../lib/types";
@@ -25,7 +26,14 @@ function EventDetailRender({ pk }: { pk: number }) {
     if (eventQuery.isLoading) return <LoadingIndicator size="15rem" />;
     return (
         <>
-            <h1>{eventQuery.data.name}</h1>
+            <div className="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h1>{eventQuery.data.name}</h1>
+                {eventQuery.data.can_edit && (
+                    <Link to={`/events/${pk}/edit`} className="btn btn-outline-primary">
+                        <i className="bi bi-pencil" aria-hidden="true" /> Edit
+                    </Link>
+                )}
+            </div>
             <LocationAddress location={eventQuery.data.location}>
                 &nbsp;&ndash;&nbsp;
             </LocationAddress>

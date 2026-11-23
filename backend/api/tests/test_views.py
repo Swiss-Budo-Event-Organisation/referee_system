@@ -7,6 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from api.serializers import UserSerializer
 from api.tests.helpers import grant
 from api.tests.helpers import make_competition
 from api.tests.helpers import make_event
@@ -221,6 +222,75 @@ class TestUser(AuthenticatedTestCase):
             {"id", "address", "dob", "iban", "phone", "mobile"},
         )
         self.assertEqual(response.data["permissions"], [])
+        self.assertFalse(response.data["is_staff"])
+
+    def urls(self, user=None):
+        pk = (user or self.user).pk
+        return [f"/api/user/{pk}/", f"/api/user/{pk}/update/"]
+
+    def test_staff_flag_is_read_only(self):
+        for url in self.urls():
+            with self.subTest(url=url):
+                response = self.client.patch(url, {"is_staff": True}, format="json")
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.user.refresh_from_db()
+                self.assertFalse(self.user.is_staff)
+
+    def test_updates_own_user_and_referee(self):
+        for url in self.urls():
+            with self.subTest(url=url):
+                data = {
+                    "first_name": "Johnny",
+                    "referee": {"phone": "+41 31 000 00 00"},
+                }
+                response = self.client.patch(url, data, format="json")
+                self.assertEqual(response.status_code, 200, response.data)
+                self.assertEqual(response.data["first_name"], "Johnny")
+                self.user.refresh_from_db()
+                self.assertEqual(self.user.first_name, "Johnny")
+                self.assertEqual(self.user.last_name, "Doe")
+                self.assertEqual(self.user.referee.phone, "+41 31 000 00 00")
+
+    def test_password_is_hashed(self):
+        response = self.client.patch(
+            self.urls()[0], {"password": "n3w-Pa55word"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("n3w-Pa55word"))
+        self.assertNotEqual(self.user.password, "n3w-Pa55word")
+
+    def test_cannot_change_other_users(self):
+        other = make_user("jane", first_name="Jane")
+        for url in self.urls(other):
+            with self.subTest(url=url):
+                response = self.client.patch(url, {"first_name": "X"}, format="json")
+                self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        other.refresh_from_db()
+        self.assertEqual(other.first_name, "Jane")
+
+    def test_staff_changes_other_users(self):
+        other = make_user("jane", first_name="Jane")
+        self.client.force_authenticate(make_user("staff", is_staff=True))
+        response = self.client.patch(
+            self.urls(other)[1], {"first_name": "Janet"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        other.refresh_from_db()
+        self.assertEqual(other.first_name, "Janet")
+
+    def test_serializer_creates_user_with_referee(self):
+        serializer = UserSerializer(
+            data={
+                "username": "new",
+                "password": "s3cret-Pa55word",
+                "referee": {"phone": "123"},
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        user = serializer.save()
+        self.assertTrue(user.check_password("s3cret-Pa55word"))
+        self.assertEqual(user.referee.phone, "123")
 
     def test_permissions_of_the_user(self):
         self.user.groups.add(Group.objects.get(name="Region 1 Admin"))

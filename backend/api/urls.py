@@ -15,6 +15,9 @@ from api.views import DetailLicenseView
 from api.views import DetailLocationView
 from api.views import DetailOwnApplicationView
 from api.views import DetailUserView
+from api.views import EditEventWithCompetitionsView
+from api.views import EventApplicationDetailView
+from api.views import EventApplicationsView
 from api.views import ListCompetitionCategoriesView
 from api.views import ListEventsView
 from api.views import ListExaminationsView
@@ -41,6 +44,21 @@ urlpatterns = [
     ),
     path("events/future/", ListFurtureEventsView.as_view(), name="event-list-future"),
     path("events/<int:pk>/", DetailEventView.as_view(), name="event-detail"),
+    path(
+        "events/<int:pk>/edit/",
+        EditEventWithCompetitionsView.as_view(),
+        name="event-edit",
+    ),
+    path(
+        "events/<int:pk>/applications/",
+        EventApplicationsView.as_view(),
+        name="event-applications",
+    ),
+    path(
+        "events/<int:pk>/applications/<int:application>/",
+        EventApplicationDetailView.as_view(),
+        name="event-application-detail",
+    ),
     path("competition/", CreateCompetitionView.as_view(), name="competition-create"),
     path(
         "competition/<int:pk>/applications/",

@@ -68,6 +68,58 @@ class OwnApplicationSerializer(ApplicationSerializer):
         ]
 
 
+class EventApplicationSerializer(ApplicationSerializer):
+    """
+    Application as listed and added by the admins of an event. Admins may add
+    an application for any referee, without the checks referees face when
+    applying themselves. Only one application per referee and competition
+    is possible, though.
+    """
+
+    name = serializers.CharField(source="user.name", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+
+    class Meta(ApplicationSerializer.Meta):
+        fields = [
+            "id",
+            "user",
+            "name",
+            "competition",
+            "status",
+            "status_display",
+            "created",
+        ]
+        read_only_fields = ["created", "status"]
+
+    def validate_competition(self, competition):
+        event = self.context["event"]
+        if competition.event_id != event.pk:
+            raise serializers.ValidationError(
+                "This competition does not belong to the event."
+            )
+        return competition
+
+
+class EventApplicationStatusSerializer(serializers.ModelSerializer):
+    """
+    The status change admins of an event may make to an application: they
+    may only set it to cancelled or declined.
+    """
+
+    REMOVED = [Application.Status.CANCLED, Application.Status.DECLINED]
+
+    status = serializers.ChoiceField(
+        choices=[(s.value, s.label) for s in REMOVED],
+    )
+
+    class Meta:
+        model = Application
+        fields = ["status"]
+
+    def to_representation(self, instance):
+        return EventApplicationSerializer(instance, context=self.context).data
+
+
 class CompetitionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Competition
@@ -103,6 +155,7 @@ class CompetitionCategorySerializer(serializers.ModelSerializer):
 class EventSerializer(serializers.ModelSerializer):
     location = LocationSerializer(many=False, read_only=True)
     competitions = CompetitionSerializer(many=True, read_only=True)
+    can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
@@ -119,11 +172,19 @@ class EventSerializer(serializers.ModelSerializer):
             "info",
             "slug",
             "accommodations",
+            "can_edit",
         ]
         read_only_fields = ["created", "modified", "creator"]
         # DRF's UniqueForYearValidator makes slug and start required even on
         # partial updates, so uniqueness is checked in validate() instead.
         validators = []
+
+    def get_can_edit(self, event) -> bool:
+        """Whether the requesting user may edit the event."""
+        request = self.context.get("request")
+        if request is None:
+            return False
+        return request.user.has_perm("competition.change_event", event)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -195,9 +256,12 @@ class NewLocationSerializer(serializers.ModelSerializer):
 
 class NestedCompetitionSerializer(serializers.ModelSerializer):
     """
-    A competition (tournament day) created together with its event.
+    A competition (tournament day) saved together with its event. When
+    editing an event, existing days carry their `id`; days without one are
+    new.
     """
 
+    id = serializers.IntegerField(required=False, allow_null=True)
     category = serializers.PrimaryKeyRelatedField(
         queryset=CompetitionCategory.objects.all(), many=True, allow_empty=False
     )
@@ -205,6 +269,7 @@ class NestedCompetitionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Competition
         fields = [
+            "id",
             "invitor",
             "minimum_level",
             "desired_level",
@@ -240,13 +305,15 @@ class NestedCompetitionSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class EventCreateSerializer(serializers.ModelSerializer):
+class EventFormSerializer(serializers.ModelSerializer):
     """
-    Create an event together with all its competitions in one request.
+    Create or edit an event together with all its competitions in one
+    request.
 
     The location is either an existing one (`location`) or a new one
     (`new_location`). Start and end of the event are taken from its
-    competitions.
+    competitions. When editing, competitions missing from the request are
+    deleted, unless someone applied for them.
     """
 
     location = serializers.PrimaryKeyRelatedField(
@@ -283,23 +350,75 @@ class EventCreateSerializer(serializers.ModelSerializer):
             )
         return attrs
 
-    @transaction.atomic
-    def create(self, validated_data):
-        competitions = validated_data.pop("competitions")
+    @staticmethod
+    def _location(validated_data):
         new_location = validated_data.pop("new_location", None)
         if new_location is not None:
             address = Address.objects.create(**new_location.pop("address"))
             validated_data["location"] = Location.objects.create(
                 address=address, **new_location
             )
+
+    @staticmethod
+    def _period(competitions):
         start = min(c["start"] for c in competitions)
         end = max(c["start"] + c["duration"] for c in competitions)
+        return start, end
+
+    @transaction.atomic
+    def create(self, validated_data):
+        competitions = validated_data.pop("competitions")
+        self._location(validated_data)
+        start, end = self._period(competitions)
         event = Event.create(start=start, end=end, **validated_data)
         for data in competitions:
+            data.pop("id", None)
             categories = data.pop("category")
             competition = Competition.objects.create(event=event, **data)
             competition.category.set(categories)
         return event
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        competitions = validated_data.pop("competitions")
+        self._location(validated_data)
+        existing = {c.pk: c for c in instance.competitions.all()}
+        ids = [c.get("id") for c in competitions if c.get("id") is not None]
+        if any(pk not in existing for pk in ids) or len(ids) != len(set(ids)):
+            raise serializers.ValidationError(
+                {"competitions": ["A competition day does not belong to this event."]}
+            )
+        removed = [c for pk, c in existing.items() if pk not in ids]
+        if any(c.applications.exists() for c in removed):
+            raise serializers.ValidationError(
+                {
+                    "competitions": [
+                        "A competition day with applications cannot be removed."
+                    ]
+                }
+            )
+
+        # The slug stays, so links to the event keep working.
+        for field in ("name", "info", "location"):
+            if field in validated_data:
+                setattr(instance, field, validated_data[field])
+        instance.start, instance.end = self._period(competitions)
+        instance.save()
+
+        for competition in removed:
+            competition.delete()
+        for data in competitions:
+            pk = data.pop("id", None)
+            categories = data.pop("category")
+            if pk is None:
+                competition = Competition.objects.create(event=instance, **data)
+            else:
+                competition = existing[pk]
+                for field, value in data.items():
+                    setattr(competition, field, value)
+                competition.save()
+            competition.category.set(categories)
+        return instance
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

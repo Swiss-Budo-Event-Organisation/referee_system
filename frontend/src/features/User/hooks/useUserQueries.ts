@@ -27,11 +27,13 @@ export function useExaminationQuery(user: number) {
     })
 }
 
+type CurrentUser = { permissions?: string[]; is_staff?: boolean };
+
 /**
- * Whether the logged-in user has a model permission such as
- * "competition.add_event". Undefined while the user is being loaded.
+ * A fact about the logged-in user, false without one and undefined while
+ * the user is being loaded.
  */
-export function useHasPermission(permission: string): boolean | undefined {
+function useCurrentUser(read: (user: CurrentUser) => boolean): boolean | undefined {
     const id = getUser();
     const query = useQuery({
         queryKey: ["profile", id],
@@ -42,5 +44,15 @@ export function useHasPermission(permission: string): boolean | undefined {
     });
     if (id === undefined || query.isError) return false;
     if (query.data === undefined) return undefined;
-    return (query.data.permissions ?? []).includes(permission);
+    return read(query.data);
+}
+
+/** Whether the logged-in user has a model permission such as "competition.add_event". */
+export function useHasPermission(permission: string): boolean | undefined {
+    return useCurrentUser((user) => (user.permissions ?? []).includes(permission));
+}
+
+/** Whether the logged-in user is a staff member. */
+export function useIsStaff(): boolean | undefined {
+    return useCurrentUser((user) => Boolean(user.is_staff));
 }
