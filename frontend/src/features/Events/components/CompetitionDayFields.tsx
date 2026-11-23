@@ -39,7 +39,7 @@ function CompetitionDayFields({
     function changeMinimumLevel(e: ChangeEvent<HTMLSelectElement>) {
         // Most competitions want the minimum level, so preselect it.
         const value = e.target.value;
-        onChange(day.desiredLevel ? { minimumLevel: value } : { minimumLevel: value, desiredLevel: value });
+        onChange(day.desiredLevel || !value ? { minimumLevel: value } : { minimumLevel: value, desiredLevel: value });
     }
 
     const title = `Day ${index + 1}`;
@@ -102,9 +102,9 @@ function CompetitionDayFields({
                 </Row>
 
                 <Row>
-                    <FormField id={id("minimum-level")} label="Minimum license" required md={6} errors={errors.minimumLevel}>
+                    <FormField id={id("minimum-level")} label="Minimum license" md={6} errors={errors.minimumLevel}>
                         <Form.Select {...text("minimumLevel")} onChange={changeMinimumLevel}>
-                            <option value="">Choose…</option>
+                            <option value="">No license required</option>
                             {options.licenses.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                         </Form.Select>
                     </FormField>

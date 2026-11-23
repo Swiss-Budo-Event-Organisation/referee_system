@@ -74,6 +74,18 @@ class TestCreateEventWithCompetitions(APITestCase):
         self.assertEqual(len(response.data["competitions"]), 2)
         self.assertEqual(response.data["id"], event.pk)
 
+    def test_minimum_license_is_optional(self):
+        response = self.post(
+            {
+                "name": "Kids Cup",
+                "location": make_location().pk,
+                "competitions": [self.competition(self.day1, minimum_level=None)],
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertIsNone(Competition.objects.get().minimum_level)
+
     def test_creates_new_location(self):
         response = self.post(
             {

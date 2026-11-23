@@ -185,6 +185,20 @@ describe("App", () => {
     }
   });
 
+  it("shows when no license is required", async () => {
+    responses["/api/events/1"] = {
+      ...events[0],
+      competitions: [{ ...competition, minimum_level: null }],
+    };
+    try {
+      logIn();
+      renderApp("/events/1");
+      expect(await screen.findByText("License: National B (no license required)")).toBeInTheDocument();
+    } finally {
+      responses["/api/events/1"] = { ...events[0], competitions: [competition] };
+    }
+  });
+
   it("lays out several competitions in a grid", async () => {
     logIn();
     renderApp("/events/2");

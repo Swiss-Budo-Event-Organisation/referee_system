@@ -33,7 +33,9 @@ function CompetitionDetail({ competition }: { competition: CompetitionType }) {
                                 <LoadingIndicator /> :
                                 <ListGroupItem>
                                     License: {license(competition.desired_level, licenseQuery.data)}
-                                    {competition.desired_level != competition.minimum_level && ` (minimum: ${license(competition.minimum_level, licenseQuery.data)})`}
+                                    {competition.minimum_level === null ?
+                                        " (no license required)" :
+                                        competition.desired_level != competition.minimum_level && ` (minimum: ${license(competition.minimum_level, licenseQuery.data)})`}
                                 </ListGroupItem>
                             }
                         </ListGroup>

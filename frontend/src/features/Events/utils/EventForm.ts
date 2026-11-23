@@ -186,7 +186,6 @@ export function validateEventForm(form: EventForm): EventFormErrors {
         }
         if (day.category.length === 0) dayErrors.category = ["Choose at least one category."];
         if (!day.invitor) dayErrors.invitor = [required];
-        if (!day.minimumLevel) dayErrors.minimumLevel = [required];
         if (!day.desiredLevel) dayErrors.desiredLevel = [required];
         if (day.applicationOpen && day.applicationClose && day.applicationOpen > day.applicationClose) {
             dayErrors.applicationClose = ["Registration must close after it opens."];
@@ -235,7 +234,7 @@ export function buildEventPayload(form: EventForm) {
             category: day.category,
             invitor: Number(day.invitor),
             head_referee: optionalNumber(day.headReferee),
-            minimum_level: Number(day.minimumLevel),
+            minimum_level: optionalNumber(day.minimumLevel),
             desired_level: Number(day.desiredLevel),
             competition_fields: optionalNumber(day.competitionFields),
             referees: optionalNumber(day.referees),

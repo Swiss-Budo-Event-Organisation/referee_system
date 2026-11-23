@@ -31,7 +31,7 @@ export type CompetitionType = {
     competition_fields: number | null;
     invitor: number;
     desired_level: number;
-    minimum_level: number;
+    minimum_level: number | null;
     start: string;
     info: string;
     observers: number | null;

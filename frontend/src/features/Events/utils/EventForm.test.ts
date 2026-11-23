@@ -98,7 +98,7 @@ describe("validateEventForm", () => {
         expect(errors.event.name).toBeDefined();
         expect(errors.competitions[0]).toBeUndefined();
         expect(Object.keys(errors.competitions[1]).sort()).toEqual(
-            ["category", "date", "desiredLevel", "invitor", "minimumLevel"],
+            ["category", "date", "desiredLevel", "invitor"],
         );
     });
 
@@ -144,7 +144,10 @@ describe("buildEventPayload", () => {
         form.locationMode = "new";
         form.newLocation = { ...form.newLocation, name: "Hall", street: "Main", city: "Bern" };
         form.competitions[0].application = false;
+        form.competitions[0].minimumLevel = "";
+        expect(hasErrors(validateEventForm(form))).toBe(false);
         const payload = buildEventPayload(form);
+        expect(payload.competitions[0].minimum_level).toBeNull();
         expect(payload).not.toHaveProperty("location");
         expect(payload.new_location?.address).toEqual({
             street: "Main", house_number: "", area_code: "", city: "Bern", country: "Switzerland",

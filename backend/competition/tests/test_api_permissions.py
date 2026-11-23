@@ -1,3 +1,4 @@
+from datetime import date
 from datetime import timedelta
 
 from django.contrib.auth.models import Group
@@ -154,6 +155,7 @@ class TestCompetitionApi(PermissionTestCase):
 
 class TestApplicationApi(PermissionTestCase):
     def test_user_creates_and_changes_own_application(self):
+        Examination.create(self.other, license=self.regional, date=date(2024, 5, 1))
         self.client.force_authenticate(self.other)
         response = self.client.post(
             reverse("application-create-list"),

@@ -4,7 +4,6 @@ from django.core import mail
 from django.core.validators import MaxValueValidator
 from django.core.validators import MinValueValidator
 from django.db import models
-from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
@@ -120,6 +119,10 @@ class Competition(models.Model):
         RefereeLicense,
         on_delete=models.PROTECT,
         related_name="+",
+        null=True,
+        blank=True,
+        verbose_name=_("Minimum license"),
+        help_text=_("Leave empty to also accept candidates without a license."),
     )
     desired_level = models.ForeignKey(
         RefereeLicense,
@@ -199,19 +202,24 @@ class Competition(models.Model):
             return False
         return now <= self.registration_closes
 
+    def is_eligible(self, user: Referee) -> bool:
+        """
+        Check if the referee holds the minimum license or a higher one.
+        Without a minimum license everyone is eligible, also candidates who
+        don't have a license yet.
+        """
+        if self.minimum_level is None:
+            return True
+        return user.is_qualified(self.minimum_level)
+
     def application_allowed(self, user: Referee | None = None) -> bool:
         """
-        Check if application is currently possible.
+        Check if application is currently possible, for the given referee if
+        one is given.
         """
         if not self.registration_open():
             return False
-        if user is None:
-            return True
-        for lic in user.licenses():
-            license = get_object_or_404(RefereeLicense, name=lic)
-            if self.minimum_level < license:
-                return True
-        return False
+        return user is None or self.is_eligible(user)
 
 
 class Accommodation(models.Model):

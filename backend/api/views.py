@@ -217,9 +217,19 @@ class CreateListApplicationView(generics.ListCreateAPIView):
                 raise PermissionDenied(
                     detail="You are not allowed to apply someone else."
                 )
-            if not serializer.validated_data["competition"].registration_open():
+            competition = serializer.validated_data["competition"]
+            if not competition.registration_open():
                 raise ValidationError(
                     {"competition": ["Registration for this competition is closed."]}
+                )
+            if not competition.is_eligible(self.request.user.referee):
+                raise ValidationError(
+                    {
+                        "competition": [
+                            "You need at least the "
+                            f"{competition.minimum_level} license to apply."
+                        ]
+                    }
                 )
             serializer.save(user=self.request.user.referee)
         else:

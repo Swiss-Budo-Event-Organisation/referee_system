@@ -226,6 +226,46 @@ class TestApplications(AuthenticatedTestCase):
         super().setUp()
         self.event = make_event()
         self.competition = make_competition(self.event, self.user.referee)
+        Examination.create(
+            self.user,
+            license=RefereeLicense.objects.get(name="Regional"),
+            date=date(2024, 5, 1),
+        )
+
+    def apply(self, competition, user=None):
+        user = user or self.user
+        self.client.force_authenticate(user)
+        return self.client.post(
+            reverse("application-create-list"),
+            {"user": user.referee.pk, "competition": competition.pk},
+            format="json",
+        )
+
+    def test_license_needed_to_apply(self):
+        competition = make_competition(
+            self.event,
+            self.user.referee,
+            minimum_level=RefereeLicense.objects.get(name="National B"),
+        )
+
+        response = self.apply(competition)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["competition"],
+            ["You need at least the National B license to apply."],
+        )
+        self.assertEqual(self.apply(competition, make_user("jane")).status_code, 400)
+        self.assertFalse(Application.objects.exists())
+
+    def test_no_license_needed_without_minimum(self):
+        competition = make_competition(
+            self.event, self.user.referee, minimum_level=None
+        )
+
+        response = self.apply(competition, make_user("jane"))
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_apply_for_competition(self):
         response = self.client.post(

@@ -1,3 +1,4 @@
+from datetime import date
 from datetime import timedelta
 
 from django.contrib.auth.models import User
@@ -9,6 +10,8 @@ from api.tests.helpers import make_event
 from api.tests.helpers import make_user
 from competition.models import Event
 from helper.models import Location
+from referee.models import Examination
+from referee.models import RefereeLicense
 
 
 class TestCompetitionModel(TestCase):
@@ -70,3 +73,52 @@ class TestRegistrationWindow(TestCase):
 
     def test_registration_switched_off(self):
         self.assert_open(False, application=False)
+
+
+class TestEligibility(TestCase):
+    def setUp(self):
+        self.referee = make_user("john").referee
+        self.competition = make_competition(make_event(), self.referee)
+        self.competition.minimum_level = RefereeLicense.objects.get(name="National B")
+
+    def license(self, name, passed=True):
+        Examination.create(
+            self.referee,
+            license=RefereeLicense.objects.get(name=name),
+            date=date(2024, 5, 1),
+            passed=passed,
+        )
+
+    def test_without_license(self):
+        self.assertFalse(self.competition.is_eligible(self.referee))
+
+    def test_minimum_license(self):
+        self.license("National B")
+        self.assertTrue(self.competition.is_eligible(self.referee))
+
+    def test_higher_license(self):
+        self.license("IJF Continental")
+        self.assertTrue(self.competition.is_eligible(self.referee))
+
+    def test_lower_license(self):
+        self.license("Regional")
+        self.assertFalse(self.competition.is_eligible(self.referee))
+
+    def test_failed_exam_does_not_count(self):
+        self.license("National B", passed=False)
+        self.assertFalse(self.competition.is_eligible(self.referee))
+
+    def test_no_minimum_accepts_everyone(self):
+        self.competition.minimum_level = None
+        self.assertTrue(self.competition.is_eligible(self.referee))
+
+    def test_application_allowed(self):
+        self.license("National A")
+        self.assertTrue(self.competition.application_allowed(self.referee))
+        self.assertTrue(self.competition.application_allowed())
+        self.competition.application = False
+        self.assertFalse(self.competition.application_allowed(self.referee))
+        self.competition.application = True
+        self.assertFalse(
+            self.competition.application_allowed(make_user("jane").referee)
+        )
