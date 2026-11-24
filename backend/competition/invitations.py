@@ -7,7 +7,8 @@ selected or not selected; sending it marks them as invited or declined and
 e-mails every invited referee the list of everyone invited.
 
 Applications that were cancelled, or belong to a competition that already
-took place (participated, no show), are left alone.
+took place (participated, no show), are left alone. Only staff members and
+superusers may invite cancelled applications again.
 """
 
 from collections.abc import Iterable
@@ -26,8 +27,8 @@ from referee.models import Referee
 
 Status = Application.Status
 
-# Statuses the invitation may change. Applications with any other status
-# can't be invited.
+# Statuses of the applications an invitor may invite. The invitation leaves
+# applications with any other status alone.
 MANAGED = frozenset(
     {
         Status.APPLIED,
@@ -37,6 +38,16 @@ MANAGED = frozenset(
         Status.DECLINED,
     }
 )
+
+# Staff members and superusers may also invite cancelled applications.
+STAFF_MANAGED = MANAGED | {Status.CANCELLED}
+
+
+def invitable_statuses(user=None) -> frozenset:
+    """The statuses of the applications the user may invite."""
+    if user is not None and (user.is_staff or user.is_superuser):
+        return STAFF_MANAGED
+    return MANAGED
 
 
 def latest_sent(competition: Competition) -> Invitation | None:
@@ -55,14 +66,14 @@ def default_subject(competition: Competition) -> str:
 
 
 def locked_referees(
-    competition: Competition, referees: Iterable[Referee]
+    competition: Competition, referees: Iterable[Referee], user=None
 ) -> list[Referee]:
-    """The referees whose application the invitation must not change."""
+    """The referees whose application the user may not invite."""
     pks = {referee.pk for referee in referees}
     return [
         application.user
         for application in competition.applications.filter(user__in=pks)
-        .exclude(status__in=MANAGED)
+        .exclude(status__in=invitable_statuses(user))
         .select_related("user__user")
     ]
 
@@ -82,9 +93,12 @@ def _applications(competition, referees) -> list[Application]:
 
 
 def _update_statuses(competition, invited, selected_status, other_status, others):
+    # Who may invite which application is checked before.
     invited_pks = [a.pk for a in invited]
-    applications = competition.applications.filter(status__in=MANAGED)
-    for application in applications.filter(pk__in=invited_pks):
+    applications = competition.applications
+    for application in applications.filter(
+        pk__in=invited_pks, status__in=STAFF_MANAGED
+    ):
         application.status = selected_status(application)
         application.save(update_fields=["status", "modified"])
     for application in applications.exclude(pk__in=invited_pks).filter(

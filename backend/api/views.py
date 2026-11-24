@@ -451,11 +451,16 @@ class CompetitionInvitationView(APIView):
         return competition
 
     def get(self, request, *args, **kwargs):
-        return Response(invitation_overview(self.get_competition()))
+        return Response(invitation_overview(self.get_competition(), request.user))
 
     def save(self, request, competition):
         serializer = InvitationFormSerializer(
-            data=request.data, context={"competition": competition, "send": self.send}
+            data=request.data,
+            context={
+                "competition": competition,
+                "send": self.send,
+                "user": request.user,
+            },
         )
         serializer.is_valid(raise_exception=True)
         return save_invitation(competition, **serializer.validated_data)
@@ -463,7 +468,7 @@ class CompetitionInvitationView(APIView):
     def put(self, request, *args, **kwargs):
         competition = self.get_competition()
         self.save(request, competition)
-        return Response(invitation_overview(competition))
+        return Response(invitation_overview(competition, request.user))
 
 
 class SendCompetitionInvitationView(CompetitionInvitationView):
@@ -480,7 +485,7 @@ class SendCompetitionInvitationView(CompetitionInvitationView):
     def post(self, request, *args, **kwargs):
         competition = self.get_competition()
         invitation = send_invitation(self.save(request, competition), request.user)
-        data = invitation_overview(competition)
+        data = invitation_overview(competition, request.user)
         data["missing_email"] = missing_emails(invitation)
         return Response(data)
 

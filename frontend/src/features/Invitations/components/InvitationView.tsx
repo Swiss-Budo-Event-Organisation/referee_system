@@ -24,6 +24,9 @@ import {
     toggleReferee,
 } from "../utils/Invitation";
 
+/** Application.Status.CANCELLED in the backend. */
+const CANCELLED = -2;
+
 function dateTime(value: string): string {
     return `${extractDay(value)} ${extractTime(value)}`;
 }
@@ -391,6 +394,12 @@ function InvitationContent({ data, referees }: ContentProps) {
                                 Saving marks the selected applications as selected and the others as not selected.
                                 Sending marks them as invited and declined.
                             </Form.Text>
+                            {data.applications.some((a) => a.status === CANCELLED && a.selectable) && (
+                                <Form.Text className="d-block mt-1">
+                                    <i className="bi bi-shield-lock" aria-hidden="true" /> As a staff member you may also
+                                    invite cancelled applications; they become selected, and invited once sent.
+                                </Form.Text>
+                            )}
                         </Card.Body>
                     </Card>
                 </Col>

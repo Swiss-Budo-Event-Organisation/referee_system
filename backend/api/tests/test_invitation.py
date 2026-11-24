@@ -290,3 +290,68 @@ class TestFurtherRecipients(InvitationTestCase):
         data = self.client.get(self.url()).data["invitation"]
         self.assertEqual(data["copy_users"], [self.coach.pk])
         self.assertEqual(data["copy_emails"], ["office@example.ch"])
+
+
+class TestStaffInvitesCancelled(InvitationTestCase):
+    def setUp(self):
+        super().setUp()
+        self.cancelled = self.applied[self.cleo.pk]
+        self.cancelled.status = Status.CANCELLED
+        self.cancelled.save()
+        self.declined = self.applied[self.ben.pk]
+        self.declined.status = Status.DECLINED
+        self.declined.save()
+
+    def selectable(self):
+        data = self.client.get(self.url()).data["applications"]
+        return {a["user"]: a["selectable"] for a in data}
+
+    def test_invitor_may_not_invite_cancelled(self):
+        self.assertFalse(self.selectable()[self.cleo.pk])
+        response = self.save(self.cleo)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        response = self.save(self.anna, head_referee=self.cleo)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self.status_of(self.cleo), Status.CANCELLED)
+
+    def test_invitor_may_invite_declined_again(self):
+        self.assertTrue(self.selectable()[self.ben.pk])
+        self.save(self.ben)
+        self.assertEqual(self.status_of(self.ben), Status.SELECTED)
+
+    def test_staff_and_superusers_may_select_and_invite_cancelled(self):
+        for user in (
+            make_user("staff", is_staff=True),
+            make_user("root", is_superuser=True),
+        ):
+            with self.subTest(user=user.username):
+                self.cancelled.status = Status.CANCELLED
+                self.cancelled.save()
+                self.client.force_authenticate(user)
+                self.assertTrue(self.selectable()[self.cleo.pk])
+                response = self.save(self.cleo, self.ben, head_referee=self.cleo)
+                self.assertEqual(
+                    response.status_code, status.HTTP_200_OK, response.data
+                )
+                self.assertEqual(self.status_of(self.cleo), Status.SELECTED)
+                self.assertEqual(self.status_of(self.ben), Status.SELECTED)
+
+    def test_staff_sends_to_cancelled(self):
+        self.client.force_authenticate(make_user("staff", is_staff=True))
+        response = self.send(self.cleo, head_referee=self.cleo)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(self.status_of(self.cleo), Status.INVITED)
+        self.assertIn("cleo@example.ch", [m.to[0] for m in mail.outbox])
+
+    def test_cancelled_stay_cancelled_when_not_selected(self):
+        self.client.force_authenticate(make_user("staff", is_staff=True))
+        self.send(self.anna, head_referee=self.anna)
+        self.assertEqual(self.status_of(self.cleo), Status.CANCELLED)
+
+    def test_selected_by_staff_can_be_kept_by_the_invitor(self):
+        self.client.force_authenticate(make_user("staff", is_staff=True))
+        self.save(self.cleo)
+        self.client.force_authenticate(self.invitor)
+        response = self.save(self.cleo, self.anna, head_referee=self.anna)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(self.status_of(self.cleo), Status.SELECTED)

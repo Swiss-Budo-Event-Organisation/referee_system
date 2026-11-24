@@ -462,6 +462,7 @@ describe("App", () => {
         expect(await screen.findByText("no e-mail address")).toBeInTheDocument();
         // Cancelled applications can't be invited.
         expect(screen.getByRole("checkbox", { name: "Invite Joe Rex" })).toBeDisabled();
+        expect(screen.queryByText(/As a staff member/)).not.toBeInTheDocument();
         await user.click(screen.getByRole("checkbox", { name: "Invite Jane Roe" }));
         await user.selectOptions(screen.getByLabelText("Add a referee who did not apply"), "John Doe");
         await user.click(screen.getByRole("button", { name: "Add" }));
@@ -552,6 +553,30 @@ describe("App", () => {
             "/api/competition/3/invitation/",
             expect.objectContaining({ copy_users: [], copy_emails: ["office@example.ch"] }),
           ),
+        );
+      } finally {
+        restore();
+      }
+    });
+
+    it("lets staff invite cancelled applications", async () => {
+      const restore = withInvitation();
+      responses["/api/competition/3/invitation/"] = {
+        ...invitation,
+        applications: invitation.applications.map((a) => ({ ...a, selectable: true })),
+      };
+      (api.put as Mock).mockResolvedValue({ data: invitation });
+      try {
+        logIn();
+        renderApp("/competitions/3/invitation");
+        const user = userEvent.setup();
+        const cancelled = await screen.findByRole("checkbox", { name: "Invite Joe Rex" });
+        expect(cancelled).toBeEnabled();
+        expect(screen.getByText(/As a staff member you may also invite cancelled applications/)).toBeInTheDocument();
+        await user.click(cancelled);
+        await user.click(screen.getByRole("button", { name: "Save" }));
+        await waitFor(() =>
+          expect(api.put).toHaveBeenCalledWith("/api/competition/3/invitation/", expect.objectContaining({ referees: [10] })),
         );
       } finally {
         restore();

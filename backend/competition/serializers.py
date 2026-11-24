@@ -3,9 +3,9 @@ from django.db import transaction
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
-from competition.invitations import MANAGED
 from competition.invitations import default_subject
 from competition.invitations import draft
+from competition.invitations import invitable_statuses
 from competition.invitations import latest_sent
 from competition.invitations import locked_referees
 from competition.models import Accommodation
@@ -290,7 +290,7 @@ class InvitationFormSerializer(serializers.Serializer):
         head_referee = attrs.get("head_referee")
         if head_referee is not None:
             referees.append(head_referee)
-        locked = locked_referees(competition, referees)
+        locked = locked_referees(competition, referees, self.context.get("user"))
         if locked:
             names = ", ".join(sorted(r.name for r in locked))
             raise serializers.ValidationError(
@@ -331,7 +331,7 @@ class InvitationApplicationSerializer(serializers.ModelSerializer):
         return bool(application.user.user.email)
 
     def get_selectable(self, application) -> bool:
-        return application.status in MANAGED
+        return application.status in self.context["invitable"]
 
 
 def _invitation_data(invitation):
@@ -351,7 +351,7 @@ def _invitation_data(invitation):
     }
 
 
-def invitation_overview(competition):
+def invitation_overview(competition, user=None):
     """
     What the invitation page shows: the competition, the draft (or the
     invitation sent last as starting point), the last sent invitation and
@@ -399,7 +399,9 @@ def invitation_overview(competition):
         },
         "invitation": invitation,
         "last_sent": _invitation_data(sent),
-        "applications": InvitationApplicationSerializer(applications, many=True).data,
+        "applications": InvitationApplicationSerializer(
+            applications, many=True, context={"invitable": invitable_statuses(user)}
+        ).data,
     }
 
 
