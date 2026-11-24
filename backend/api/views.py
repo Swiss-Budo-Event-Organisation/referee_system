@@ -481,7 +481,7 @@ class SendCompetitionInvitationView(CompetitionInvitationView):
         competition = self.get_competition()
         invitation = send_invitation(self.save(request, competition), request.user)
         data = invitation_overview(competition)
-        data["missing_email"] = [r.name for r in missing_emails(invitation)]
+        data["missing_email"] = missing_emails(invitation)
         return Response(data)
 
 

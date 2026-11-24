@@ -12,6 +12,7 @@ import { useRefereesQuery } from "../../Events/hooks/useEventFormQueries";
 import { RefereeOptionType } from "../../Events/utils/EventForm";
 import { useInvitationQuery } from "../hooks/useInvitationQueries";
 import {
+    addCopyEmail,
     chooseHeadReferee,
     errorMessages,
     InvitationApplicationType,
@@ -146,6 +147,121 @@ function AddReferee({ options, onAdd, disabled }: AddProps) {
     );
 }
 
+type RecipientsProps = {
+    form: InvitationForm;
+    setForm: (form: InvitationForm) => void;
+    referees: RefereeOptionType[];
+    disabled: boolean;
+};
+
+/** Users and e-mail addresses that get a copy of the e-mail. */
+function FurtherRecipients({ form, setForm, referees, disabled }: RecipientsProps) {
+    const [user, setUser] = useState("");
+    const [email, setEmail] = useState("");
+    const [emailError, setEmailError] = useState<string | null>(null);
+    const users = new Map(referees.filter((r) => r.user !== undefined).map((r) => [r.user as number, r.name]));
+    const options = [...users].filter(([id]) => !form.copyUsers.includes(id));
+
+    function addUser() {
+        if (!user) return;
+        setForm({ ...form, copyUsers: [...form.copyUsers, Number(user)] });
+        setUser("");
+    }
+
+    function addEmail() {
+        const result = addCopyEmail(form, email);
+        if (typeof result === "string") {
+            setEmailError(result);
+            return;
+        }
+        setForm(result);
+        setEmail("");
+        setEmailError(null);
+    }
+
+    const recipients = [
+        ...form.copyUsers.map((id) => ({
+            key: `user-${id}`,
+            label: users.get(id) ?? "Unknown user",
+            icon: "bi-person",
+            remove: () => setForm({ ...form, copyUsers: form.copyUsers.filter((u) => u !== id) }),
+        })),
+        ...form.copyEmails.map((address) => ({
+            key: `email-${address}`,
+            label: address,
+            icon: "bi-at",
+            remove: () => setForm({ ...form, copyEmails: form.copyEmails.filter((e) => e !== address) }),
+        })),
+    ];
+
+    return (
+        <fieldset className="mb-3">
+            <legend className="form-label fs-6 mb-1">Further recipients</legend>
+            {recipients.length > 0 && (
+                <ul className="list-unstyled d-flex flex-wrap gap-2 mb-2" aria-label="Further recipients">
+                    {recipients.map((r) => (
+                        <li key={r.key}>
+                            <Badge bg="body-tertiary" className="border text-body fw-normal d-inline-flex align-items-center gap-1">
+                                <i className={`bi ${r.icon}`} aria-hidden="true" /> {r.label}
+                                <Button
+                                    variant="link"
+                                    size="sm"
+                                    className="p-0 ms-1 lh-1 text-body-secondary"
+                                    aria-label={`Remove ${r.label}`}
+                                    onClick={r.remove}
+                                    disabled={disabled}
+                                >
+                                    <i className="bi bi-x-lg" aria-hidden="true" />
+                                </Button>
+                            </Badge>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            <InputGroup size="sm" className="mb-2">
+                <Form.Select
+                    aria-label="Add a user as recipient"
+                    value={user}
+                    onChange={(e) => setUser(e.target.value)}
+                    disabled={disabled}
+                >
+                    <option value="">Choose a user…</option>
+                    {options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                </Form.Select>
+                <Button variant="outline-secondary" onClick={addUser} disabled={disabled || !user}>
+                    Add user
+                </Button>
+            </InputGroup>
+            <InputGroup size="sm" hasValidation>
+                <Form.Control
+                    type="email"
+                    aria-label="Add an e-mail address as recipient"
+                    placeholder="name@example.ch"
+                    value={email}
+                    isInvalid={emailError !== null}
+                    disabled={disabled}
+                    onChange={(e) => {
+                        setEmail(e.target.value);
+                        setEmailError(null);
+                    }}
+                    onKeyDown={(e) => {
+                        // Enter adds the address instead of saving the invitation.
+                        if (e.key === "Enter") {
+                            e.preventDefault();
+                            addEmail();
+                        }
+                    }}
+                />
+                <Button variant="outline-secondary" onClick={addEmail} disabled={disabled || !email.trim()}>
+                    Add address
+                </Button>
+                <Form.Control.Feedback type="invalid">{emailError}</Form.Control.Feedback>
+            </InputGroup>
+            <Form.Text>They get a copy of the e-mail, like you.</Form.Text>
+        </fieldset>
+    );
+}
+
 function Preview({ form, names }: { form: InvitationForm; names: Map<number, string> }) {
     const invited = invitedReferees(form, names);
     const head = invited.find((r) => r.head);
@@ -213,7 +329,9 @@ function InvitationContent({ data, referees }: ContentProps) {
 
     function send() {
         const count = invitationPayload(form).referees.length;
-        if (window.confirm(`Send the invitation to ${count} referee${count === 1 ? "" : "s"}?`)) {
+        const copies = form.copyUsers.length + form.copyEmails.length;
+        const further = copies ? ` and ${copies} further recipient${copies === 1 ? "" : "s"}` : "";
+        if (window.confirm(`Send the invitation to ${count} referee${count === 1 ? "" : "s"}${further}?`)) {
             mutation.mutate(true);
         }
     }
@@ -298,13 +416,19 @@ function InvitationContent({ data, referees }: ContentProps) {
                                     value={form.message}
                                     disabled={disabled}
                                     placeholder="Information for the invited referees…"
+                                    aria-describedby="invitation-greeting-note"
                                     onChange={(e) => setForm({ ...form, message: e.target.value })}
                                 />
+                                <Form.Text id="invitation-greeting-note" className="d-block">
+                                    <i className="bi bi-info-circle" aria-hidden="true" /> Each e-mail starts with a
+                                    personal greeting (“Dear …”), so start your message without one.
+                                </Form.Text>
                                 <Form.Text>
                                     The e-mail also contains the date and place, the head referee and the list of all
                                     invited referees. You get a copy.
                                 </Form.Text>
                             </Form.Group>
+                            <FurtherRecipients form={form} setForm={setForm} referees={referees} disabled={disabled} />
                             <Preview form={form} names={names} />
                         </Card.Body>
                         <Card.Footer className="d-flex justify-content-end gap-2">

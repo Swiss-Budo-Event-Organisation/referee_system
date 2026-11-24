@@ -342,7 +342,14 @@ class Invitation(models.Model):
         related_name="+",
         verbose_name=_("Head referee"),
     )
-    send_copy = models.ManyToManyField(User, blank=True)
+    send_copy = models.ManyToManyField(
+        User, blank=True, verbose_name=_("Further recipients (users)")
+    )
+    copy_emails = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name=_("Further recipients (e-mail addresses)"),
+    )
     subject = models.CharField(max_length=240)
     message = models.TextField(blank=True)
     created = models.DateTimeField(auto_now_add=True)

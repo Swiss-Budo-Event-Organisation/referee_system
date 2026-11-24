@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { chooseHeadReferee, InvitationForm, invitationPayload, invitedReferees, toggleReferee } from "./Invitation";
+import { addCopyEmail, chooseHeadReferee, InvitationForm, invitationPayload, invitedReferees, toggleReferee } from "./Invitation";
 
-const form: InvitationForm = { referees: [1, 2], headReferee: null, subject: " Invitation ", message: "Hi" };
+const form: InvitationForm = {
+    referees: [1, 2], headReferee: null, subject: " Invitation ", message: "Hi", copyUsers: [], copyEmails: [],
+};
 
 describe("invitation form", () => {
     it("selects and deselects referees", () => {
@@ -26,6 +28,8 @@ describe("invitation form", () => {
             head_referee: 4,
             subject: "Invitation",
             message: "Hi",
+            copy_users: [],
+            copy_emails: [],
         });
     });
 
@@ -36,5 +40,12 @@ describe("invitation form", () => {
             { id: 2, name: "Anna", head: false },
             { id: 1, name: "Zoe", head: false },
         ]);
+    });
+
+    it("adds valid e-mail addresses once", () => {
+        const added = addCopyEmail(form, " office@example.ch ");
+        expect(added).toMatchObject({ copyEmails: ["office@example.ch"] });
+        expect(addCopyEmail(added as InvitationForm, "Office@Example.ch")).toBe("This address was already added.");
+        expect(addCopyEmail(form, "office@example")).toBe("Enter a valid e-mail address.");
     });
 });

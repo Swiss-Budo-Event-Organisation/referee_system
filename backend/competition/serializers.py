@@ -1,3 +1,4 @@
+from django.contrib.auth.models import User
 from django.db import transaction
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
@@ -254,10 +255,14 @@ class CompetitionOverviewSerializer(serializers.ModelSerializer):
         ]
 
 
+MAX_COPY_EMAILS = 50
+
+
 class InvitationFormSerializer(serializers.Serializer):
     """
     The invitation as prepared by the invitor: the referees to invite, who
-    may or may not have applied, the head referee and the e-mail text.
+    may or may not have applied, the head referee, the e-mail text and the
+    further recipients of a copy, users or e-mail addresses.
     """
 
     referees = serializers.PrimaryKeyRelatedField(
@@ -268,6 +273,15 @@ class InvitationFormSerializer(serializers.Serializer):
     )
     subject = serializers.CharField(max_length=240)
     message = serializers.CharField(allow_blank=True, required=False, default="")
+    copy_users = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), many=True, required=False, default=list
+    )
+    copy_emails = serializers.ListField(
+        child=serializers.EmailField(),
+        required=False,
+        default=list,
+        max_length=MAX_COPY_EMAILS,
+    )
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -329,6 +343,8 @@ def _invitation_data(invitation):
         "message": invitation.message,
         "referees": [a.user_id for a in invitation.invited.all()],
         "head_referee": invitation.head_referee_id,
+        "copy_users": [u.pk for u in invitation.send_copy.all()],
+        "copy_emails": invitation.copy_emails,
         "created": invitation.created,
         "modified": invitation.modified,
         "sent": invitation.sent,
@@ -361,6 +377,8 @@ def invitation_overview(competition):
                 if a.status in (Application.Status.SELECTED, Application.Status.INVITED)
             ],
             "head_referee": competition.head_referee_id,
+            "copy_users": [],
+            "copy_emails": [],
             "created": None,
             "modified": None,
             "sent": None,

@@ -13,6 +13,7 @@ took place (participated, no show), are left alone.
 from collections.abc import Iterable
 
 from django.conf import settings
+from django.contrib.auth.models import User
 from django.core import mail
 from django.db import transaction
 from django.template.loader import render_to_string
@@ -100,11 +101,14 @@ def save_invitation(
     head_referee: Referee | None,
     subject: str,
     message: str = "",
+    copy_users: Iterable[User] = (),
+    copy_emails: Iterable[str] = (),
 ) -> Invitation:
     """
     Save the draft of the invitation. Selected applications become selected,
     the others not selected. Referees who were already invited stay invited
-    until the changed invitation is sent.
+    until the changed invitation is sent. The further recipients get a copy
+    of the e-mail.
     """
     referees = list(dict.fromkeys(referees))
     if head_referee is not None and head_referee not in referees:
@@ -118,7 +122,9 @@ def save_invitation(
     invitation.head_referee = head_referee
     invitation.subject = subject
     invitation.message = message
+    invitation.copy_emails = _unique_emails(copy_emails)
     invitation.save()
+    invitation.send_copy.set(copy_users)
 
     invited = _applications(competition, referees)
     invitation.invited.set(invited)
@@ -180,8 +186,25 @@ def invited_referees(invitation: Invitation) -> list[Referee]:
     return referees
 
 
-def missing_emails(invitation: Invitation) -> list[Referee]:
-    return [r for r in invited_referees(invitation) if not r.user.email]
+def _unique_emails(emails: Iterable[str]) -> list[str]:
+    """The addresses without blanks and repetitions, ignoring case."""
+    unique = {}
+    for email in emails:
+        email = email.strip()
+        if email:
+            unique.setdefault(email.lower(), email)
+    return list(unique.values())
+
+
+def _user_name(user: User) -> str:
+    return user.get_full_name() or user.username
+
+
+def missing_emails(invitation: Invitation) -> list[str]:
+    """Invited referees and further recipients who won't get the e-mail."""
+    referees = [r.name for r in invited_referees(invitation) if not r.user.email]
+    users = [_user_name(u) for u in invitation.send_copy.all() if not u.email]
+    return referees + [name for name in users if name not in referees]
 
 
 def _context(invitation: Invitation, recipient: str) -> dict:
@@ -217,22 +240,22 @@ def _mail(invitation, recipient, to, reply_to):
 def invitation_mails(invitation: Invitation) -> list[mail.EmailMessage]:
     """
     One e-mail to every invited referee with an e-mail address, and a copy
-    to the sender and to the users the copy should go to.
+    to the sender and to the further recipients, users or e-mail addresses.
+    Nobody gets the e-mail twice.
     """
     sender = invitation.sender
     reply_to = [sender.email] if sender is not None and sender.email else []
-    messages = [
-        _mail(invitation, referee.name, referee.user.email, reply_to)
-        for referee in invited_referees(invitation)
-        if referee.user.email
-    ]
-    invited = {m.to[0] for m in messages}
-    copies = list(invitation.send_copy.all())
+    recipients = [(r.name, r.user.email) for r in invited_referees(invitation)]
+    users = list(invitation.send_copy.all())
     if sender is not None:
-        copies.insert(0, sender)
-    for user in copies:
-        if user.email and user.email not in invited:
-            invited.add(user.email)
-            name = user.get_full_name() or user.username
-            messages.append(_mail(invitation, name, user.email, reply_to))
+        users.insert(0, sender)
+    recipients += [(_user_name(u), u.email) for u in users]
+    recipients += [(None, email) for email in invitation.copy_emails]
+
+    messages = []
+    sent_to = set()
+    for name, email in recipients:
+        if email and email.lower() not in sent_to:
+            sent_to.add(email.lower())
+            messages.append(_mail(invitation, name, email, reply_to))
     return messages

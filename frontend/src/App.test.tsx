@@ -90,8 +90,8 @@ const responses: Record<string, unknown> = {
     { id: 2, name: "Region 1", parent: 1 },
   ],
   "/api/referees/": [
-    { id: 7, name: "John Doe" },
-    { id: 8, name: "Jane Roe" },
+    { id: 7, user: 7, name: "John Doe" },
+    { id: 8, user: 18, name: "Jane Roe" },
   ],
 };
 
@@ -411,7 +411,7 @@ describe("App", () => {
       },
       invitation: {
         id: null, subject: "Invitation: Swiss Open (01.12.2030)", message: "", referees: [],
-        head_referee: null, created: null, modified: null, sent: null,
+        head_referee: null, copy_users: [], copy_emails: [], created: null, modified: null, sent: null,
       },
       last_sent: null,
       applications: [
@@ -475,6 +475,7 @@ describe("App", () => {
           "Jane Roe",
         ]);
 
+        expect(screen.getByLabelText("Message")).toHaveAccessibleDescription(/start your message without one/);
         await user.type(screen.getByLabelText("Message"), "See you there.");
         await user.click(screen.getByRole("button", { name: "Save" }));
         await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
@@ -483,6 +484,8 @@ describe("App", () => {
           head_referee: 7,
           subject: "Invitation: Swiss Open (01.12.2030)",
           message: "See you there.",
+          copy_users: [],
+          copy_emails: [],
         });
         expect(await screen.findByText("The invitation was saved.")).toBeInTheDocument();
       } finally {
@@ -514,6 +517,43 @@ describe("App", () => {
         expect(await screen.findByRole("button", { name: "Send update" })).toBeInTheDocument();
       } finally {
         confirm.mockRestore();
+        restore();
+      }
+    });
+
+    it("adds users and e-mail addresses as further recipients", async () => {
+      const restore = withInvitation();
+      (api.put as Mock).mockResolvedValue({ data: invitation });
+      try {
+        logIn();
+        renderApp("/competitions/3/invitation");
+        const user = userEvent.setup();
+
+        await user.selectOptions(await screen.findByLabelText("Add a user as recipient"), "Jane Roe");
+        await user.click(screen.getByRole("button", { name: "Add user" }));
+        const address = screen.getByLabelText("Add an e-mail address as recipient");
+        await user.type(address, "not-an-address{Enter}");
+        expect(screen.getByText("Enter a valid e-mail address.")).toBeInTheDocument();
+        await user.clear(address);
+        await user.type(address, "office@example.ch{Enter}");
+        await user.type(address, "OFFICE@example.ch");
+        await user.click(screen.getByRole("button", { name: "Add address" }));
+        expect(screen.getByText("This address was already added.")).toBeInTheDocument();
+
+        const list = within(screen.getByRole("list", { name: "Further recipients" }));
+        expect(list.getAllByRole("listitem").map((li) => li.textContent?.trim())).toEqual(["Jane Roe", "office@example.ch"]);
+        // Enter added the address without saving the invitation.
+        expect(api.put).not.toHaveBeenCalled();
+
+        await user.click(list.getByRole("button", { name: "Remove Jane Roe" }));
+        await user.click(screen.getByRole("button", { name: "Save" }));
+        await waitFor(() =>
+          expect(api.put).toHaveBeenCalledWith(
+            "/api/competition/3/invitation/",
+            expect.objectContaining({ copy_users: [], copy_emails: ["office@example.ch"] }),
+          ),
+        );
+      } finally {
         restore();
       }
     });

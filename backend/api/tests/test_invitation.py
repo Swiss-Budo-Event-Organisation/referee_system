@@ -225,3 +225,68 @@ class TestUpdateInvitation(InvitationTestCase):
         self.assertIn("update of the invitation", mail.outbox[0].body)
         self.competition.refresh_from_db()
         self.assertEqual(self.competition.head_referee, self.cleo)
+
+
+class TestFurtherRecipients(InvitationTestCase):
+    def setUp(self):
+        super().setUp()
+        self.coach = make_user("coach", first_name="Carl", last_name="Coach")
+        self.coach.email = "coach@example.ch"
+        self.coach.save()
+        self.nomail = make_user("nomail", first_name="No", last_name="Mail")
+
+    def test_saves_users_and_addresses(self):
+        response = self.save(
+            self.anna,
+            copy_users=[self.coach.pk],
+            copy_emails=["office@example.ch", "Office@example.ch", "club@example.ch"],
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        data = response.data["invitation"]
+        self.assertEqual(data["copy_users"], [self.coach.pk])
+        self.assertEqual(data["copy_emails"], ["office@example.ch", "club@example.ch"])
+
+    def test_rejects_invalid_addresses(self):
+        response = self.save(self.anna, copy_emails=["not an address"])
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("copy_emails", response.data)
+
+    def test_sends_a_copy_to_each_once(self):
+        self.send(
+            self.anna,
+            head_referee=self.anna,
+            copy_users=[self.coach.pk, self.nomail.pk],
+            copy_emails=["office@example.ch", "ANNA@example.ch"],
+        )
+        recipients = sorted(m.to[0] for m in mail.outbox)
+        self.assertEqual(
+            recipients,
+            [
+                "anna@example.ch",
+                "coach@example.ch",
+                "invitor@example.ch",
+                "office@example.ch",
+            ],
+        )
+        copy = next(m for m in mail.outbox if m.to == ["office@example.ch"])
+        self.assertTrue(copy.body.startswith("Hello"))
+        self.assertIn("- Anna Arm (head referee)", copy.body)
+        coach = next(m for m in mail.outbox if m.to == ["coach@example.ch"])
+        self.assertTrue(coach.body.startswith("Dear Carl Coach"))
+
+    def test_reports_recipients_without_email(self):
+        response = self.send(
+            self.anna, head_referee=self.anna, copy_users=[self.nomail.pk]
+        )
+        self.assertEqual(response.data["missing_email"], ["No Mail"])
+
+    def test_carries_recipients_over_to_the_update(self):
+        self.send(
+            self.anna,
+            head_referee=self.anna,
+            copy_users=[self.coach.pk],
+            copy_emails=["office@example.ch"],
+        )
+        data = self.client.get(self.url()).data["invitation"]
+        self.assertEqual(data["copy_users"], [self.coach.pk])
+        self.assertEqual(data["copy_emails"], ["office@example.ch"])

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <body style="font-family: sans-serif; line-height: 1.4;">
-    <p>Dear {{ recipient }}</p>
+    <p>{% if recipient %}Dear {{ recipient }}{% else %}Hello{% endif %}</p>
     {% if is_update %}
     <p><strong>This is an update of the invitation sent before. Only this invitation is valid.</strong></p>
     {% endif %}

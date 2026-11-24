@@ -1,4 +1,4 @@
-{% autoescape off %}Dear {{ recipient }}
+{% autoescape off %}{% if recipient %}Dear {{ recipient }}{% else %}Hello{% endif %}
 {% if is_update %}
 This is an update of the invitation sent before. Only this invitation is valid.
 {% endif %}
