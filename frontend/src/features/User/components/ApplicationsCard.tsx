@@ -30,33 +30,36 @@ function Application({ app }: { app: ApplicationType }) {
         <Card className={applicationStatusClass(app.status)}>
             <CardHeader className={"d-flex justify-content-between"}>
                 <CardTitle>{competitionQuery.data.event.name} &ndash; {formattedDateRange(competitionQuery.data.start)} &ndash; {extractTime(competitionQuery.data.start)}</CardTitle>
-                <div className="d-flex align-items-start gap-2">
-                    {app.has_invitation && <ShowInvitation application={app.id} />}
+                <div>
                     <OverlayTrigger placement="left" delay={{ show: 250, hide: 500 }} overlay={renderTooltip(app.status)}><i className="bi bi-info-circle" aria-label={applicationStatusInfo(app.status)}></i></OverlayTrigger>
                 </div>
             </CardHeader>
-            <CardBody>
-                <CardText>{<LocationAddress location={competitionQuery.data.event.location}>&nbsp;&ndash;&nbsp;</LocationAddress>}</CardText>
-                <CardText>{competitionQuery.data.info}</CardText>
+            {/* The button sits next to the text if there is room, else below it, on the right. */}
+            <CardBody className="d-flex flex-wrap align-items-center column-gap-3 row-gap-2">
+                <div className="me-auto">
+                    <CardText className={competitionQuery.data.info ? undefined : "mb-0"}>
+                        {<LocationAddress location={competitionQuery.data.event.location}>&nbsp;&ndash;&nbsp;</LocationAddress>}
+                    </CardText>
+                    {competitionQuery.data.info && <CardText className="mb-0">{competitionQuery.data.info}</CardText>}
+                </div>
+                {app.has_invitation && (
+                    <div className="ms-auto">
+                        <ShowInvitation application={app.id} />
+                    </div>
+                )}
             </CardBody>
         </Card>
     </>
     return <></>
 }
 
-/** An eye button opening the invitation the user received. */
+/** A button opening the invitation the user received. */
 function ShowInvitation({ application }: { application: number }) {
     const [show, setShow] = useState(false);
     return (
         <>
-            <Button
-                variant="link"
-                className="p-0 lh-1 text-reset"
-                aria-label="Show the invitation"
-                title="Show the invitation"
-                onClick={() => setShow(true)}
-            >
-                <i className="bi bi-eye" aria-hidden="true" />
+            <Button variant="outline-primary" onClick={() => setShow(true)}>
+                <i className="bi bi-eye me-1" aria-hidden="true" /> Show the invitation
             </Button>
             <InvitationModal application={application} show={show} onHide={() => setShow(false)} />
         </>
