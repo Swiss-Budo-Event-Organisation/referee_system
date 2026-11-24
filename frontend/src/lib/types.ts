@@ -65,6 +65,8 @@ export type ApplicationType = {
     competition: number;
     status: number;
     role?: number;
+    /** Whether the invitation sent last invites this application. */
+    has_invitation?: boolean;
 }
 
 export type UserType = {

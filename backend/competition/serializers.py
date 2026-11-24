@@ -3,9 +3,11 @@ from django.db import transaction
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
+from competition.invitations import current_invitation
 from competition.invitations import default_subject
 from competition.invitations import draft
 from competition.invitations import invitable_statuses
+from competition.invitations import invited_referees
 from competition.invitations import latest_sent
 from competition.invitations import locked_referees
 from competition.models import Accommodation
@@ -64,15 +66,22 @@ class ApplicationSerializer(serializers.ModelSerializer):
 class OwnApplicationSerializer(ApplicationSerializer):
     """
     Application as seen by the applying referee: status and role are set by
-    the competition admins only.
+    the competition admins only. `has_invitation` tells whether the referee
+    may read the invitation sent last.
     """
 
+    has_invitation = serializers.SerializerMethodField()
+
     class Meta(ApplicationSerializer.Meta):
+        fields = [*ApplicationSerializer.Meta.fields, "has_invitation"]
         read_only_fields = [
             *ApplicationSerializer.Meta.read_only_fields,
             "status",
             "role",
         ]
+
+    def get_has_invitation(self, application) -> bool:
+        return current_invitation(application) is not None
 
 
 class EventApplicationSerializer(ApplicationSerializer):
@@ -348,6 +357,33 @@ def _invitation_data(invitation):
         "created": invitation.created,
         "modified": invitation.modified,
         "sent": invitation.sent,
+    }
+
+
+def received_invitation(invitation):
+    """
+    A sent invitation as its invited referees read it: the e-mail without
+    its further recipients.
+    """
+    competition = invitation.competition
+    event = competition.event
+    sender = invitation.sender
+    return {
+        "subject": invitation.subject,
+        "message": invitation.message,
+        "sent": invitation.sent,
+        "sender": (sender.get_full_name() or sender.username) if sender else None,
+        "is_update": invitation.previous_invitation_id is not None,
+        "event_name": event.name,
+        "location": str(event.location),
+        "address": str(event.location.address),
+        "start": competition.start,
+        "end": competition.start + competition.duration,
+        "info": competition.info,
+        "referees": [
+            {"name": r.name, "head": r.pk == invitation.head_referee_id}
+            for r in invited_referees(invitation)
+        ],
     }
 
 

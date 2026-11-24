@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework import generics
 from rest_framework import status
 from rest_framework.exceptions import MethodNotAllowed
+from rest_framework.exceptions import NotFound
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import SAFE_METHODS
@@ -17,6 +18,7 @@ from rest_framework.views import APIView
 
 from api.serializers import UserCreateSerializer
 from api.serializers import UserSerializer
+from competition.invitations import current_invitation
 from competition.invitations import missing_emails
 from competition.invitations import save_invitation
 from competition.invitations import send_invitation
@@ -46,6 +48,7 @@ from competition.serializers import EventSerializer
 from competition.serializers import InvitationFormSerializer
 from competition.serializers import OwnApplicationSerializer
 from competition.serializers import invitation_overview
+from competition.serializers import received_invitation
 from helper.models import Address
 from helper.models import Location
 from helper.serializers import AddressSerializer
@@ -390,6 +393,26 @@ class DetailOwnApplicationView(generics.RetrieveUpdateAPIView):
     def perform_update(self, serializer):
         _keep_fixed_fields(serializer, serializer.instance, "user", "competition")
         serializer.save()
+
+
+class OwnApplicationInvitationView(APIView):
+    """
+    The invitation sent last for one of the user's own applications, read
+    only. Only referees invited in it may read it.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        application = get_object_or_404(
+            Application.objects.select_related("competition__event__location__address"),
+            pk=self.kwargs["pk"],
+            user__user=request.user,
+        )
+        invitation = current_invitation(application)
+        if invitation is None:
+            raise NotFound(detail="You were not invited for this competition.")
+        return Response(received_invitation(invitation))
 
 
 class ManageApplicationView(generics.RetrieveUpdateAPIView):

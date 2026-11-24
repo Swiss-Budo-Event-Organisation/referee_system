@@ -356,3 +356,78 @@ class TestStaffInvitesCancelled(InvitationTestCase):
         response = self.save(self.cleo, self.anna, head_referee=self.anna)
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(self.status_of(self.cleo), Status.SELECTED)
+
+
+class TestReadOwnInvitation(InvitationTestCase):
+    def setUp(self):
+        super().setUp()
+        self.coach = make_user("coach", email="coach@example.ch")
+
+    def own(self, referee):
+        self.client.force_authenticate(referee.user)
+        response = self.client.get(reverse("application-create-list"))
+        return {a["id"]: a for a in response.data}
+
+    def read(self, referee):
+        self.client.force_authenticate(referee.user)
+        application = self.applied[referee.pk]
+        return self.client.get(reverse("application-invitation", args=[application.pk]))
+
+    def test_shows_the_invitation_sent_last_to_the_invited(self):
+        self.send(
+            self.anna,
+            self.ben,
+            head_referee=self.ben,
+            copy_users=[self.coach.pk],
+            copy_emails=["office@example.ch"],
+        )
+        self.assertTrue(
+            self.own(self.anna)[self.applied[self.anna.pk].pk]["has_invitation"]
+        )
+        response = self.read(self.anna)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        data = response.data
+        self.assertEqual(data["subject"], "Invitation Swiss Open")
+        self.assertEqual(data["message"], "See you on the mat.")
+        self.assertEqual(data["event_name"], "Swiss Open")
+        self.assertIsNotNone(data["sent"])
+        self.assertFalse(data["is_update"])
+        self.assertEqual(
+            data["referees"],
+            [{"name": "Ben Bein", "head": True}, {"name": "Anna Arm", "head": False}],
+        )
+        # Further recipients stay private.
+        self.assertNotIn("office@example.ch", str(data))
+        self.assertNotIn("copy_users", data)
+
+    def test_not_for_those_not_invited(self):
+        self.send(self.anna, head_referee=self.anna)
+        self.assertFalse(
+            self.own(self.cleo)[self.applied[self.cleo.pk].pk]["has_invitation"]
+        )
+        self.assertEqual(self.read(self.cleo).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_not_before_sending(self):
+        self.save(self.anna, head_referee=self.anna)
+        self.assertFalse(
+            self.own(self.anna)[self.applied[self.anna.pk].pk]["has_invitation"]
+        )
+        self.assertEqual(self.read(self.anna).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_shows_the_update_and_hides_it_from_those_left_out(self):
+        self.send(self.anna, self.ben, head_referee=self.anna)
+        self.client.force_authenticate(self.invitor)
+        self.send(self.anna, head_referee=self.anna, subject="Changed")
+        response = self.read(self.anna)
+        self.assertEqual(response.data["subject"], "Changed")
+        self.assertTrue(response.data["is_update"])
+        self.assertEqual(self.read(self.ben).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_only_own_applications(self):
+        self.send(self.anna, head_referee=self.anna)
+        self.client.force_authenticate(self.cleo.user)
+        application = self.applied[self.anna.pk]
+        response = self.client.get(
+            reverse("application-invitation", args=[application.pk])
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

@@ -27,6 +27,7 @@ from api.views import ListLicenseView
 from api.views import ListLocationsView
 from api.views import ListRefereesView
 from api.views import ManageApplicationView
+from api.views import OwnApplicationInvitationView
 from api.views import SendCompetitionInvitationView
 from api.views import UpdateAddressView
 from api.views import UpdateUserView
@@ -97,6 +98,11 @@ urlpatterns = [
         "applications/<int:pk>/",
         DetailOwnApplicationView.as_view(),
         name="application-detail",
+    ),
+    path(
+        "applications/<int:pk>/invitation/",
+        OwnApplicationInvitationView.as_view(),
+        name="application-invitation",
     ),
     path(
         "applications/<int:pk>/manage/",

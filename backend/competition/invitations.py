@@ -54,6 +54,18 @@ def latest_sent(competition: Competition) -> Invitation | None:
     return competition.invitations.filter(sent__isnull=False).order_by("-sent").first()
 
 
+def current_invitation(application: Application) -> Invitation | None:
+    """
+    The invitation sent last for the application's competition, if it
+    invites this application. Referees left out of an update don't see the
+    one sent before.
+    """
+    invitation = latest_sent(application.competition)
+    if invitation is None or not invitation.invited.filter(pk=application.pk).exists():
+        return None
+    return invitation
+
+
 def draft(competition: Competition) -> Invitation | None:
     """The invitation that is being prepared and not sent yet."""
     return (

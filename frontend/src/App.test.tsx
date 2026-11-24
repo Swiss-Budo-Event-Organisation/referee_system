@@ -809,6 +809,48 @@ describe("App", () => {
     expect(screen.getByLabelText("passed")).toBeInTheDocument();
   });
 
+  it("shows the invitation of invited applications in a read-only window", async () => {
+    const previous = { ...responses };
+    const application = { id: 20, user: 7, created: "2030-10-01T10:00", modified: "2030-10-01T10:00", status: 2 };
+    responses["/api/applications/"] = [
+      { ...application, competition: 3, has_invitation: true },
+      { ...application, id: 21, competition: 4, status: 0, has_invitation: false },
+    ];
+    responses["/api/competition/3"] = { id: 3, event: { ...events[0] }, start: "2030-12-01T09:00", info: "Seniors" };
+    responses["/api/competition/4"] = { id: 4, event: { ...events[1] }, start: "2030-11-01T09:00", info: "Juniors" };
+    responses["/api/applications/20/invitation/"] = {
+      subject: "Invitation Swiss Open", message: "Line one\nLine two", sent: "2030-11-01T10:00:00+01:00",
+      sender: "Ina Vitor", is_update: true, event_name: "Swiss Open", location: "Dojo Bern",
+      address: "Main Street 1, 3000 Bern", start: "2030-12-01T09:00", end: "2030-12-01T17:00", info: "Seniors",
+      referees: [{ name: "Ben Bein", head: true }, { name: "John Doe", head: false }],
+    };
+    try {
+      logIn();
+      renderApp("/profile");
+      const user = userEvent.setup();
+      // Only the invited application has the eye.
+      const [eye, ...others] = await screen.findAllByRole("button", { name: "Show the invitation" });
+      expect(others).toHaveLength(0);
+      expect(getRequest).not.toHaveBeenCalledWith("/api/applications/20/invitation/", expect.anything());
+
+      await user.click(eye);
+      const dialog = within(await screen.findByRole("dialog"));
+      expect(await dialog.findByText("Invitation Swiss Open")).toBeInTheDocument();
+      expect(dialog.getByText(/by Ina Vitor/)).toBeInTheDocument();
+      expect(dialog.getByText(/This is an update/)).toBeInTheDocument();
+      expect(dialog.getByText(/Line one/)).toBeInTheDocument();
+      expect(dialog.getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Ben Bein (head referee)", "John Doe"]);
+      // Read only.
+      expect(dialog.queryByRole("textbox")).not.toBeInTheDocument();
+
+      await user.click(dialog.getAllByRole("button", { name: "Close" })[0]);
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    } finally {
+      Object.keys(responses).forEach((key) => delete responses[key]);
+      Object.assign(responses, previous);
+    }
+  });
+
   it("toggles the theme", async () => {
     renderApp("/login");
     const toggle = await screen.findByLabelText("Change Theme Colour");

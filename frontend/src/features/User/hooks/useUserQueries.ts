@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { getUser } from "../../../lib/auth";
-import { getApplications, getExaminations, getProfile } from "../utils/User";
+import { getApplications, getExaminations, getProfile, getReceivedInvitation } from "../utils/User";
 
 export function useProfileQuery(pk: number) {
     return useQuery({
@@ -55,4 +55,14 @@ export function useHasPermission(permission: string): boolean | undefined {
 /** Whether the logged-in user is a staff member. */
 export function useIsStaff(): boolean | undefined {
     return useCurrentUser((user) => Boolean(user.is_staff));
+}
+
+/** The invitation of one of the user's applications, loaded once it is shown. */
+export function useReceivedInvitationQuery(application: number, enabled: boolean) {
+    return useQuery({
+        queryKey: ["application", application, "invitation"],
+        queryFn: (obj) => getReceivedInvitation(application, obj.signal),
+        enabled,
+        staleTime: 1000 * 60 * 2,
+    })
 }
