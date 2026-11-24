@@ -51,4 +51,4 @@ class RefereeOptionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Referee
-        fields = ["id", "name"]
+        fields = ["id", "user", "name"]

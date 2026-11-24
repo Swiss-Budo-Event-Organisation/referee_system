@@ -1,0 +1,14 @@
+{% autoescape off %}{% if recipient %}Dear {{ recipient }}{% else %}Hello{% endif %}
+{% if is_update %}
+This is an update of the invitation sent before. Only this invitation is valid.
+{% endif %}
+{% if message %}{{ message }}
+
+{% endif %}{{ event.name }}
+Date: {{ competition.start|date:"l, d.m.Y" }}, {{ competition.start|time:"H:i" }}–{{ end|time:"H:i" }}
+Location: {{ event.location.name }}, {{ event.location.address }}{% if competition.info %}
+{{ competition.info }}{% endif %}
+
+Invited referees ({{ referees|length }}):
+{% for referee in referees %}- {{ referee.name }}{% if referee.pk == head_referee.pk %} (head referee){% endif %}
+{% endfor %}{% endautoescape %}

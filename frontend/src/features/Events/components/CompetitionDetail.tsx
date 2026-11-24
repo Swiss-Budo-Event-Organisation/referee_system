@@ -1,4 +1,5 @@
 import { Button, Card, Col, ListGroup, ListGroupItem } from "react-bootstrap";
+import { Link } from "react-router-dom";
 import { type CompetitionType } from "../../../lib/types"
 import { extractDay, license } from "../../../lib/helper";
 import LoadingIndicator from "../../../components/LoadingIndicator";
@@ -39,10 +40,17 @@ function CompetitionDetail({ competition }: { competition: CompetitionType }) {
                                 </ListGroupItem>
                             }
                         </ListGroup>
-                        {closedReason ?
-                            <p className="text-body-secondary mb-0">{closedReason}</p> :
-                            <Button onClick={handleApply(competition.id)}>Apply</Button>
-                        }
+                        <div className="d-flex flex-wrap align-items-center gap-2">
+                            {closedReason ?
+                                <p className="text-body-secondary mb-0 me-auto">{closedReason}</p> :
+                                <Button onClick={handleApply(competition.id)}>Apply</Button>
+                            }
+                            {competition.can_invite && (
+                                <Link to={`/competitions/${competition.id}/invitation`} className="btn btn-outline-primary">
+                                    <i className="bi bi-envelope" aria-hidden="true" /> Invitation
+                                </Link>
+                            )}
+                        </div>
                     </Card.Body>
                 </Card>
             </Col >

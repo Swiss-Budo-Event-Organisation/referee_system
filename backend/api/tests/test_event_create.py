@@ -278,7 +278,7 @@ class TestFormOptions(APITestCase):
         response = self.client.get(reverse("referee-list"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual([r["name"] for r in response.data], ["aaron", "John Doe"])
-        self.assertEqual(set(response.data[0]), {"id", "name"})
+        self.assertEqual(set(response.data[0]), {"id", "user", "name"})
 
     def test_options_require_authentication(self):
         self.client.force_authenticate(None)

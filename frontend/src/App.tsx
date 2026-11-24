@@ -3,6 +3,7 @@ import { Route, Navigate, createBrowserRouter, createRoutesFromElements, RouterP
 import LoadingIndicator from "./components/LoadingIndicator";
 import { UserContext } from "./layouts/MainLayout";
 
+const CompetitionInvitation = lazy(() => import("./pages/CompetitionInvitation"));
 const EventOverview = lazy(() => import("./pages/EventOverview"));
 const EventCreate = lazy(() => import("./pages/EventCreate"));
 const EventDetail = lazy(() => import("./pages/EventDetail"));
@@ -66,6 +67,13 @@ function App() {
           <Suspense fallback={<LoadingIndicator size="15rem" />}>
             <ProtectedRoute>
               <EventDetail />
+            </ProtectedRoute>
+          </Suspense>
+        } />
+        <Route path="competitions/:pk/invitation" element={
+          <Suspense fallback={<LoadingIndicator size="15rem" />}>
+            <ProtectedRoute>
+              <CompetitionInvitation />
             </ProtectedRoute>
           </Suspense>
         } />

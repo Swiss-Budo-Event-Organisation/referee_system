@@ -1,17 +1,26 @@
+from django.contrib.auth.models import User
 from django.db import transaction
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
+from competition.invitations import current_invitation
+from competition.invitations import default_subject
+from competition.invitations import draft
+from competition.invitations import invitable_statuses
+from competition.invitations import invited_referees
+from competition.invitations import latest_sent
+from competition.invitations import locked_referees
 from competition.models import Accommodation
 from competition.models import Application
 from competition.models import Competition
 from competition.models import CompetitionCategory
 from competition.models import Event
-from competition.models import Invitation
+from competition.permissions import can_invite
 from helper.models import Address
 from helper.models import Location
 from helper.serializers import AddressSerializer
 from helper.serializers import LocationSerializer
+from referee.models import Referee
 
 
 class AccommodationSerializer(serializers.ModelSerializer):
@@ -57,15 +66,22 @@ class ApplicationSerializer(serializers.ModelSerializer):
 class OwnApplicationSerializer(ApplicationSerializer):
     """
     Application as seen by the applying referee: status and role are set by
-    the competition admins only.
+    the competition admins only. `has_invitation` tells whether the referee
+    may read the invitation sent last.
     """
 
+    has_invitation = serializers.SerializerMethodField()
+
     class Meta(ApplicationSerializer.Meta):
+        fields = [*ApplicationSerializer.Meta.fields, "has_invitation"]
         read_only_fields = [
             *ApplicationSerializer.Meta.read_only_fields,
             "status",
             "role",
         ]
+
+    def get_has_invitation(self, application) -> bool:
+        return current_invitation(application) is not None
 
 
 class EventApplicationSerializer(ApplicationSerializer):
@@ -121,6 +137,8 @@ class EventApplicationStatusSerializer(serializers.ModelSerializer):
 
 
 class CompetitionSerializer(serializers.ModelSerializer):
+    can_invite = serializers.SerializerMethodField()
+
     class Meta:
         model = Competition
         fields = [
@@ -142,8 +160,14 @@ class CompetitionSerializer(serializers.ModelSerializer):
             "application_close",
             "created",
             "modified",
+            "can_invite",
         ]
         read_only_fields = ["created", "modified"]
+
+    def get_can_invite(self, competition) -> bool:
+        """Whether the requesting user may prepare the invitation."""
+        request = self.context.get("request")
+        return request is not None and can_invite(request.user, competition)
 
 
 class CompetitionCategorySerializer(serializers.ModelSerializer):
@@ -240,21 +264,181 @@ class CompetitionOverviewSerializer(serializers.ModelSerializer):
         ]
 
 
-class InvitationSerializer(serializers.ModelSerializer):
+MAX_COPY_EMAILS = 50
+
+
+class InvitationFormSerializer(serializers.Serializer):
+    """
+    The invitation as prepared by the invitor: the referees to invite, who
+    may or may not have applied, the head referee, the e-mail text and the
+    further recipients of a copy, users or e-mail addresses.
+    """
+
+    referees = serializers.PrimaryKeyRelatedField(
+        queryset=Referee.objects.all(), many=True
+    )
+    head_referee = serializers.PrimaryKeyRelatedField(
+        queryset=Referee.objects.all(), allow_null=True, required=False
+    )
+    subject = serializers.CharField(max_length=240)
+    message = serializers.CharField(allow_blank=True, required=False, default="")
+    copy_users = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), many=True, required=False, default=list
+    )
+    copy_emails = serializers.ListField(
+        child=serializers.EmailField(),
+        required=False,
+        default=list,
+        max_length=MAX_COPY_EMAILS,
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        competition = self.context["competition"]
+        referees = list(attrs["referees"])
+        head_referee = attrs.get("head_referee")
+        if head_referee is not None:
+            referees.append(head_referee)
+        locked = locked_referees(competition, referees, self.context.get("user"))
+        if locked:
+            names = ", ".join(sorted(r.name for r in locked))
+            raise serializers.ValidationError(
+                {"referees": [f"These referees can't be invited: {names}."]}
+            )
+        if self.context.get("send"):
+            if not referees:
+                raise serializers.ValidationError(
+                    {"referees": ["Select at least one referee."]}
+                )
+            if head_referee is None:
+                raise serializers.ValidationError(
+                    {"head_referee": ["Select the head referee."]}
+                )
+        return attrs
+
+
+class InvitationApplicationSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source="user.name", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    has_email = serializers.SerializerMethodField()
+    selectable = serializers.SerializerMethodField()
+
     class Meta:
-        model = Invitation
+        model = Application
         fields = [
             "id",
-            "competition",
-            "previous_invitation",
-            "invited",
-            "send_copy",
-            "subject",
-            "message",
+            "user",
+            "name",
+            "status",
+            "status_display",
             "created",
-            "sent",
+            "has_email",
+            "selectable",
         ]
-        read_only_fields = ["created", "sent", "previous_invitation"]
+
+    def get_has_email(self, application) -> bool:
+        return bool(application.user.user.email)
+
+    def get_selectable(self, application) -> bool:
+        return application.status in self.context["invitable"]
+
+
+def _invitation_data(invitation):
+    if invitation is None:
+        return None
+    return {
+        "id": invitation.pk,
+        "subject": invitation.subject,
+        "message": invitation.message,
+        "referees": [a.user_id for a in invitation.invited.all()],
+        "head_referee": invitation.head_referee_id,
+        "copy_users": [u.pk for u in invitation.send_copy.all()],
+        "copy_emails": invitation.copy_emails,
+        "created": invitation.created,
+        "modified": invitation.modified,
+        "sent": invitation.sent,
+    }
+
+
+def received_invitation(invitation):
+    """
+    A sent invitation as its invited referees read it: the e-mail without
+    its further recipients.
+    """
+    competition = invitation.competition
+    event = competition.event
+    sender = invitation.sender
+    return {
+        "subject": invitation.subject,
+        "message": invitation.message,
+        "sent": invitation.sent,
+        "sender": (sender.get_full_name() or sender.username) if sender else None,
+        "is_update": invitation.previous_invitation_id is not None,
+        "event_name": event.name,
+        "location": str(event.location),
+        "address": str(event.location.address),
+        "start": competition.start,
+        "end": competition.start + competition.duration,
+        "info": competition.info,
+        "referees": [
+            {"name": r.name, "head": r.pk == invitation.head_referee_id}
+            for r in invited_referees(invitation)
+        ],
+    }
+
+
+def invitation_overview(competition, user=None):
+    """
+    What the invitation page shows: the competition, the draft (or the
+    invitation sent last as starting point), the last sent invitation and
+    all applications.
+    """
+    current = draft(competition)
+    sent = latest_sent(competition)
+    applications = competition.applications.select_related("user__user").order_by(
+        "-status", "created"
+    )
+    if current is not None:
+        invitation = _invitation_data(current)
+    elif sent is not None:
+        invitation = {**_invitation_data(sent), "id": None, "sent": None}
+    else:
+        invitation = {
+            "id": None,
+            "subject": default_subject(competition),
+            "message": "",
+            "referees": [
+                a.user_id
+                for a in applications
+                if a.status in (Application.Status.SELECTED, Application.Status.INVITED)
+            ],
+            "head_referee": competition.head_referee_id,
+            "copy_users": [],
+            "copy_emails": [],
+            "created": None,
+            "modified": None,
+            "sent": None,
+        }
+    event = competition.event
+    return {
+        "competition": {
+            "id": competition.pk,
+            "event": event.pk,
+            "event_name": event.name,
+            "location": event.location.name,
+            "start": competition.start,
+            "end": competition.start + competition.duration,
+            "info": competition.info,
+            "invitor": competition.invitor_id,
+            "head_referee": competition.head_referee_id,
+            "referees": competition.referees,
+        },
+        "invitation": invitation,
+        "last_sent": _invitation_data(sent),
+        "applications": InvitationApplicationSerializer(
+            applications, many=True, context={"invitable": invitable_statuses(user)}
+        ).data,
+    }
 
 
 class NewLocationSerializer(serializers.ModelSerializer):

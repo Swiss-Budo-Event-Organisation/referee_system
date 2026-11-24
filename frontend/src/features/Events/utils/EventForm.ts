@@ -52,7 +52,7 @@ export type EventFormErrors = {
 };
 
 export type CategoryType = { id: number; name: string; parent: number | null };
-export type RefereeOptionType = { id: number; name: string };
+export type RefereeOptionType = { id: number; name: string; /** Id of the referee's user. */ user?: number };
 
 let nextKey = 1;
 

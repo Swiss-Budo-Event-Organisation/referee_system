@@ -44,6 +44,8 @@ export type CompetitionType = {
     application_close: string | null;
     head_referee: number | null;
     modified: string;
+    /** Whether the user may prepare the invitation (its invitor, staff). */
+    can_invite?: boolean;
 }
 export type LicenseType = {
     id: number;
@@ -63,6 +65,8 @@ export type ApplicationType = {
     competition: number;
     status: number;
     role?: number;
+    /** Whether the invitation sent last invites this application. */
+    has_invitation?: boolean;
 }
 
 export type UserType = {

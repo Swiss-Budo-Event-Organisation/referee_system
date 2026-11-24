@@ -11,26 +11,10 @@ import { useCategoriesQuery, useEventApplicationsQuery, useRefereesQuery } from 
 import { useEventQuery } from "../hooks/useEventsQueries";
 import { registrationClosedReason } from "../utils/Competition";
 import { CategoryType, durationMinutes, EventApplicationType, RefereeOptionType } from "../utils/EventForm";
+import StatusBadge from "./StatusBadge";
 
-/** Colours for Application.Status in the backend, furthest along first. */
-const STATUS_VARIANTS: Record<number, string> = {
-    3: "success",   // Participated
-    2: "primary",   // Invited
-    1: "info",      // Selected
-    0: "secondary", // Applied
-    [-1]: "light",  // Not selected
-    [-2]: "warning", // Cancelled
-    [-3]: "warning", // Declined
-    [-4]: "danger", // No show
-};
-
-function StatusBadge({ application }: { application: EventApplicationType }) {
-    const variant = STATUS_VARIANTS[application.status] ?? "secondary";
-    return (
-        <Badge bg={variant} text={["light", "warning", "info"].includes(variant) ? "dark" : undefined}>
-            {application.status_display}
-        </Badge>
-    );
+function ApplicationStatus({ application }: { application: EventApplicationType }) {
+    return <StatusBadge status={application.status} label={application.status_display} />;
 }
 
 /** The part of the name matching the search, highlighted. */
@@ -97,10 +81,15 @@ function CompetitionDay({ competition, applications, total, search, lookups }: D
                     {extractTime(competition.start)}–{endTime(competition)}
                 </span>
                 {competition.info && <span>· {competition.info}</span>}
-                <span className="ms-auto d-flex gap-1 flex-wrap">
+                <span className="ms-auto d-flex gap-1 flex-wrap align-items-center">
                     {categories.map((name) => (
                         <Badge key={name} bg="body-tertiary" className="border text-body fw-normal">{name}</Badge>
                     ))}
+                    {competition.can_invite && (
+                        <Link to={`/competitions/${competition.id}/invitation`} className="btn btn-sm btn-outline-primary ms-2">
+                            <i className="bi bi-envelope" aria-hidden="true" /> Invitation
+                        </Link>
+                    )}
                 </span>
             </Card.Header>
             <Card.Body>
@@ -147,7 +136,7 @@ function CompetitionDay({ competition, applications, total, search, lookups }: D
                                     {applications.map((a) => (
                                         <tr key={a.id}>
                                             <td><Highlight text={a.name} search={search} /></td>
-                                            <td><StatusBadge application={a} /></td>
+                                            <td><ApplicationStatus application={a} /></td>
                                             <td className="text-end text-body-secondary">{extractDay(a.created)}</td>
                                         </tr>
                                     ))}
@@ -174,7 +163,7 @@ function StatusSummary({ applications }: { applications: EventApplicationType[] 
         <div className="d-flex flex-wrap gap-2" aria-label="Applications by status">
             {[...counts.values()].map(({ label, count, sample }) => (
                 <span key={label} className="d-inline-flex align-items-center gap-1">
-                    <StatusBadge application={sample} /> <span className="small">{count}</span>
+                    <ApplicationStatus application={sample} /> <span className="small">{count}</span>
                 </span>
             ))}
         </div>
