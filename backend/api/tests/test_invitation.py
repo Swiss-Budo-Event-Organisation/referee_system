@@ -167,11 +167,12 @@ class TestSendInvitation(InvitationTestCase):
         self.assertEqual(message.subject, "Invitation Swiss Open")
         self.assertEqual(message.reply_to, ["invitor@example.ch"])
         self.assertIn("See you on the mat.", message.body)
-        self.assertIn("Head referee: Ben Bein", message.body)
+        self.assertNotIn("Head referee:", message.body)
         self.assertIn("- Ben Bein (head referee)\n- Anna Arm\n- Dan Dojo", message.body)
         self.assertNotIn("Cleo", message.body)
         html = message.alternatives[0].content
         self.assertIn("<strong>Ben Bein</strong> (head referee)", html)
+        self.assertNotIn("<td>Head referee</td>", html)
 
     def test_reports_referees_without_email(self):
         response = self.send(self.anna, self.dan, head_referee=self.anna)

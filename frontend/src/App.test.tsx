@@ -470,7 +470,7 @@ describe("App", () => {
         await user.click(screen.getByRole("radio", { name: "John Doe as head referee" }));
 
         const preview = within(screen.getByLabelText("E-mail preview"));
-        expect(preview.getByText(/Head referee:/).parentElement).toHaveTextContent("Head referee: John Doe");
+        expect(preview.queryByText(/Head referee:/)).not.toBeInTheDocument();
         expect(preview.getAllByRole("listitem").map((li) => li.textContent)).toEqual([
           "John Doe (head referee)",
           "Jane Roe",

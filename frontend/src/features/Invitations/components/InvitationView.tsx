@@ -267,10 +267,8 @@ function FurtherRecipients({ form, setForm, referees, disabled }: RecipientsProp
 
 function Preview({ form, names }: { form: InvitationForm; names: Map<number, string> }) {
     const invited = invitedReferees(form, names);
-    const head = invited.find((r) => r.head);
     return (
         <div className="border rounded p-3 bg-body-tertiary small" aria-label="E-mail preview">
-            <div className="mb-1"><strong>Head referee:</strong> {head ? head.name : <em>not selected yet</em>}</div>
             <strong>Invited referees ({invited.length}):</strong>
             {invited.length === 0 ? (
                 <div className="text-body-secondary">No referee selected yet.</div>
