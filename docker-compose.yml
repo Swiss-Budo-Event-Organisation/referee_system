@@ -57,6 +57,8 @@ services:
     environment:
       # Used by the browser, so it must be the host-reachable address.
       VITE_API_URL: http://localhost:8000
+      # Pick up code changes made on the host (see vite.config.ts).
+      VITE_USE_POLLING: "true"
     volumes:
       - "./frontend:/app"
       - /app/node_modules
