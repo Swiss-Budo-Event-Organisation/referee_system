@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from api.views import CompetitionApplicationsView
+from api.views import CompetitionInvitationView
 from api.views import CreateCompetitionView
 from api.views import CreateEventWithCompetitionsView
 from api.views import CreateExaminationView
@@ -26,6 +27,7 @@ from api.views import ListLicenseView
 from api.views import ListLocationsView
 from api.views import ListRefereesView
 from api.views import ManageApplicationView
+from api.views import SendCompetitionInvitationView
 from api.views import UpdateAddressView
 from api.views import UpdateUserView
 
@@ -64,6 +66,16 @@ urlpatterns = [
         "competition/<int:pk>/applications/",
         CompetitionApplicationsView.as_view(),
         name="competition-applications",
+    ),
+    path(
+        "competition/<int:pk>/invitation/",
+        CompetitionInvitationView.as_view(),
+        name="competition-invitation",
+    ),
+    path(
+        "competition/<int:pk>/invitation/send/",
+        SendCompetitionInvitationView.as_view(),
+        name="competition-invitation-send",
     ),
     path(
         "competition/<int:pk>/",

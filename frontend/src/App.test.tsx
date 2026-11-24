@@ -403,6 +403,148 @@ describe("App", () => {
     });
   });
 
+  describe("invitation", () => {
+    const invitation = {
+      competition: {
+        id: 3, event: 1, event_name: "Swiss Open", location: "Dojo Bern", start: "2030-12-01T09:00",
+        end: "2030-12-01T17:00", info: "Seniors", invitor: 7, head_referee: null, referees: 12,
+      },
+      invitation: {
+        id: null, subject: "Invitation: Swiss Open (01.12.2030)", message: "", referees: [],
+        head_referee: null, created: null, modified: null, sent: null,
+      },
+      last_sent: null,
+      applications: [
+        { id: 9, user: 8, name: "Jane Roe", status: 0, status_display: "Applied", created: "2030-10-02T10:00:00+02:00", has_email: false, selectable: true },
+        { id: 12, user: 10, name: "Joe Rex", status: -2, status_display: "Cancelled", created: "2030-10-03T10:00:00+02:00", has_email: true, selectable: false },
+      ],
+    };
+
+    function withInvitation() {
+      const previous = { ...responses };
+      responses["/api/competition/3/invitation/"] = invitation;
+      return () => {
+        Object.keys(responses).forEach((key) => delete responses[key]);
+        Object.assign(responses, previous);
+      };
+    }
+
+    it("links the invitor to the invitation", async () => {
+      const restore = withInvitation();
+      responses["/api/events/1"] = { ...events[0], competitions: [{ ...competition, can_invite: true }] };
+      try {
+        logIn();
+        renderApp("/events/1");
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole("link", { name: "Invitation" }));
+        expect(await screen.findByRole("heading", { name: "Invitation" })).toBeInTheDocument();
+        expect(window.location.pathname).toBe("/competitions/3/invitation");
+      } finally {
+        restore();
+      }
+    });
+
+    it("hides the invitation from others", async () => {
+      logIn();
+      renderApp("/events/1");
+      expect(await screen.findByRole("heading", { name: "Swiss Open" })).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Invitation" })).not.toBeInTheDocument();
+    });
+
+    it("selects applicants, adds a referee and saves", async () => {
+      const restore = withInvitation();
+      (api.put as Mock).mockResolvedValue({ data: invitation });
+      try {
+        logIn();
+        renderApp("/competitions/3/invitation");
+        const user = userEvent.setup();
+
+        expect(await screen.findByText("no e-mail address")).toBeInTheDocument();
+        // Cancelled applications can't be invited.
+        expect(screen.getByRole("checkbox", { name: "Invite Joe Rex" })).toBeDisabled();
+        await user.click(screen.getByRole("checkbox", { name: "Invite Jane Roe" }));
+        await user.selectOptions(screen.getByLabelText("Add a referee who did not apply"), "John Doe");
+        await user.click(screen.getByRole("button", { name: "Add" }));
+        expect(screen.getByRole("checkbox", { name: "Invite John Doe" })).toBeChecked();
+        await user.click(screen.getByRole("radio", { name: "John Doe as head referee" }));
+
+        const preview = within(screen.getByLabelText("E-mail preview"));
+        expect(preview.getByText(/Head referee:/).parentElement).toHaveTextContent("Head referee: John Doe");
+        expect(preview.getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+          "John Doe (head referee)",
+          "Jane Roe",
+        ]);
+
+        await user.type(screen.getByLabelText("Message"), "See you there.");
+        await user.click(screen.getByRole("button", { name: "Save" }));
+        await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+        expect(api.put).toHaveBeenCalledWith("/api/competition/3/invitation/", {
+          referees: [8, 7],
+          head_referee: 7,
+          subject: "Invitation: Swiss Open (01.12.2030)",
+          message: "See you there.",
+        });
+        expect(await screen.findByText("The invitation was saved.")).toBeInTheDocument();
+      } finally {
+        restore();
+      }
+    });
+
+    it("sends the invitation after confirming", async () => {
+      const restore = withInvitation();
+      responses["/api/competition/3/invitation/"] = {
+        ...invitation,
+        invitation: { ...invitation.invitation, referees: [8], head_referee: 8 },
+      };
+      const sent = { ...invitation, last_sent: { ...invitation.invitation, sent: "2030-11-01T10:00:00+01:00" }, missing_email: ["Jane Roe"] };
+      (api.post as Mock).mockResolvedValue({ data: sent });
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+      try {
+        logIn();
+        renderApp("/competitions/3/invitation");
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole("button", { name: "Send invitation" }));
+
+        expect(confirm).toHaveBeenCalledWith("Send the invitation to 1 referee?");
+        await waitFor(() =>
+          expect(api.post).toHaveBeenCalledWith("/api/competition/3/invitation/send/", expect.objectContaining({ referees: [8], head_referee: 8 })),
+        );
+        expect(await screen.findByText("The invitation was sent.")).toBeInTheDocument();
+        expect(await screen.findByText(/no e-mail for: Jane Roe/)).toBeInTheDocument();
+        expect(await screen.findByRole("button", { name: "Send update" })).toBeInTheDocument();
+      } finally {
+        confirm.mockRestore();
+        restore();
+      }
+    });
+
+    it("needs a head referee before sending", async () => {
+      const restore = withInvitation();
+      try {
+        logIn();
+        renderApp("/competitions/3/invitation");
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole("checkbox", { name: "Invite Jane Roe" }));
+        expect(screen.getByRole("button", { name: "Send invitation" })).toBeDisabled();
+      } finally {
+        restore();
+      }
+    });
+
+    it("refuses the invitation to others", async () => {
+      const getOther = (getRequest as Mock).getMockImplementation()!;
+      (getRequest as Mock).mockImplementation(async (url: string, signal: AbortSignal) => {
+        if (url === "/api/competition/3/invitation/") {
+          throw Object.assign(new Error("Forbidden"), { isAxiosError: true, response: { status: 403 } });
+        }
+        return getOther(url, signal);
+      });
+      logIn();
+      renderApp("/competitions/3/invitation");
+      expect(await screen.findByText("Only the invitor of this competition may invite referees.")).toBeInTheDocument();
+    });
+  });
+
   it("hides the edit link from others", async () => {
     logIn();
     renderApp("/events/1");

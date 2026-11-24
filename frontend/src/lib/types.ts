@@ -44,6 +44,8 @@ export type CompetitionType = {
     application_close: string | null;
     head_referee: number | null;
     modified: string;
+    /** Whether the user may prepare the invitation (its invitor, staff). */
+    can_invite?: boolean;
 }
 export type LicenseType = {
     id: number;

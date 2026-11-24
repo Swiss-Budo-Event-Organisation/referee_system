@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics
@@ -12,20 +13,24 @@ from rest_framework.permissions import BasePermission
 from rest_framework.permissions import DjangoModelPermissions
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from api.serializers import UserCreateSerializer
 from api.serializers import UserSerializer
+from competition.invitations import missing_emails
+from competition.invitations import save_invitation
+from competition.invitations import send_invitation
 from competition.models import Accommodation
 from competition.models import Application
 from competition.models import Competition
 from competition.models import CompetitionCategory
 from competition.models import Event
-from competition.models import Invitation
 from competition.permissions import administers_any
 from competition.permissions import can_apply
 from competition.permissions import can_assign_categories
 from competition.permissions import can_create_event
 from competition.permissions import can_create_events
+from competition.permissions import can_invite
 from competition.permissions import can_manage_competition
 from competition.permissions import managed_applications
 from competition.permissions import observed_competitions
@@ -38,8 +43,9 @@ from competition.serializers import EventApplicationSerializer
 from competition.serializers import EventApplicationStatusSerializer
 from competition.serializers import EventFormSerializer
 from competition.serializers import EventSerializer
-from competition.serializers import InvitationSerializer
+from competition.serializers import InvitationFormSerializer
 from competition.serializers import OwnApplicationSerializer
+from competition.serializers import invitation_overview
 from helper.models import Address
 from helper.models import Location
 from helper.serializers import AddressSerializer
@@ -421,20 +427,62 @@ class DeleteApplicationView(generics.DestroyAPIView):
         raise MethodNotAllowed(instance)
 
 
-class CreateInvitationView(generics.CreateAPIView):
-    queryset = Invitation.objects.all()
-    serializer_class = InvitationSerializer
-    permission_classes = [DjangoModelPermissions]
+class CompetitionInvitationView(APIView):
+    """
+    The invitation of a competition, for its invitor and staff members.
 
-    def perform_create(self, serializer):
-        competition = serializer.validated_data.get("competition")
-        if competition is None or not can_manage_competition(
-            self.request.user, competition
-        ):
+    GET returns the draft (or the invitation sent last as starting point)
+    with all applications. PUT saves the draft: selected applications become
+    selected, the others not selected. Referees who didn't apply get an
+    application.
+    """
+
+    permission_classes = [IsAuthenticated]
+    send = False
+
+    def get_competition(self):
+        competition = get_object_or_404(
+            Competition.objects.select_related("event__location"), pk=self.kwargs["pk"]
+        )
+        if not can_invite(self.request.user, competition):
             raise PermissionDenied(
-                detail="You may only invite for competitions you administer."
+                detail="Only the invitor of the competition may invite referees."
             )
-        serializer.save()
+        return competition
+
+    def get(self, request, *args, **kwargs):
+        return Response(invitation_overview(self.get_competition()))
+
+    def save(self, request, competition):
+        serializer = InvitationFormSerializer(
+            data=request.data, context={"competition": competition, "send": self.send}
+        )
+        serializer.is_valid(raise_exception=True)
+        return save_invitation(competition, **serializer.validated_data)
+
+    def put(self, request, *args, **kwargs):
+        competition = self.get_competition()
+        self.save(request, competition)
+        return Response(invitation_overview(competition))
+
+
+class SendCompetitionInvitationView(CompetitionInvitationView):
+    """
+    Save and send the invitation: the invited applications become invited,
+    all others declined. Every invited referee gets an e-mail with the list
+    of all invited referees and the head referee.
+    """
+
+    send = True
+    http_method_names = ["post", "options"]
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        competition = self.get_competition()
+        invitation = send_invitation(self.save(request, competition), request.user)
+        data = invitation_overview(competition)
+        data["missing_email"] = [r.name for r in missing_emails(invitation)]
+        return Response(data)
 
 
 class UpdateAddressView(generics.RetrieveUpdateAPIView):

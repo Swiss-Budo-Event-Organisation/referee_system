@@ -1,10 +1,8 @@
 from django.contrib.auth.models import Group
 from django.contrib.auth.models import User
-from django.core import mail
 from django.core.validators import MaxValueValidator
 from django.core.validators import MinValueValidator
 from django.db import models
-from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
@@ -16,15 +14,6 @@ from helper.models import Location
 from referee.models import Referee
 from referee.models import RefereeLicense
 from referee.models import RefereeRole
-
-from .tasks import send_mails
-
-
-def _prepare_mail(*args, **kwargs):
-    m = mail.EmailMultiAlternatives(*args, **kwargs)
-    html = render_to_string("e-mail.html", {"message", kwargs["body"]})
-    m.attach_alternative(html, "text/html")
-    return m
 
 
 class CompetitionCategory(Category):
@@ -315,10 +304,17 @@ class Application(models.Model):
 
 
 class Invitation(models.Model):
-    competition = models.OneToOneField(
+    """
+    Invitation of referees to a competition, prepared and sent by its
+    invitor. An invitation is a draft until it is sent. Changes after
+    sending go into a new invitation that points to the one sent before.
+    """
+
+    competition = models.ForeignKey(
         Competition,
-        verbose_name=_("Invitation"),
+        verbose_name=_("Competition"),
         on_delete=models.CASCADE,
+        related_name="invitations",
         blank=True,
         null=True,
     )
@@ -336,12 +332,30 @@ class Invitation(models.Model):
         verbose_name=_("Invited"),
         related_name="invitation",
         related_query_name="invitation",
+        blank=True,
     )
-    send_copy = models.ManyToManyField(User)
+    head_referee = models.ForeignKey(
+        Referee,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="+",
+        verbose_name=_("Head referee"),
+    )
+    send_copy = models.ManyToManyField(User, blank=True)
     subject = models.CharField(max_length=240)
     message = models.TextField(blank=True)
     created = models.DateTimeField(auto_now_add=True)
+    modified = models.DateTimeField(auto_now=True)
     sent = models.DateTimeField(blank=True, null=True)
+    sender = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="+",
+        verbose_name=_("Sent by"),
+    )
 
     class Meta:
         ordering = ["created", "sent"]
@@ -350,40 +364,5 @@ class Invitation(models.Model):
         return f"Invitation {self.pk}: {self.subject}"
 
     @property
-    def is_current(self):
-        if self.competition is None:
-            return False
-        if self.is_sent:
-            return True
-        return False
-
-    @property
-    def is_sent(self):
-        if self.sent is None:
-            return False
-        if self.sent < timezone.now():
-            return True
-        raise ValueError("Sending time is in the future. Timeinfo mismatch.")
-
-    def send(self, sender: User | None = None):
-        messages = []
-        for a in self.invited:
-            messages.append(
-                _prepare_mail(
-                    subject=self.subject,
-                    body=self.message,
-                    to=a.user.user.email,
-                    reply_to=sender.email if sender is not None else "",
-                )
-            )
-        for a in self.send_copy:
-            messages.append(
-                _prepare_mail(
-                    subject=self.subject,
-                    body=self.message,
-                    to=a.email,
-                    reply_to=sender.email if sender is not None else "",
-                )
-            )
-        send_mails(messages)
-        self.sent = timezone.now()
+    def is_sent(self) -> bool:
+        return self.sent is not None

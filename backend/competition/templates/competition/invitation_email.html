@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+  <body style="font-family: sans-serif; line-height: 1.4;">
+    <p>Dear {{ recipient }}</p>
+    {% if is_update %}
+    <p><strong>This is an update of the invitation sent before. Only this invitation is valid.</strong></p>
+    {% endif %}
+    {% if message %}<p>{{ message|linebreaksbr }}</p>{% endif %}
+    <h2 style="font-size: 1.2em; margin-bottom: 0.3em;">{{ event.name }}</h2>
+    <table cellpadding="2">
+      <tr><td>Date</td><td>{{ competition.start|date:"l, d.m.Y" }}, {{ competition.start|time:"H:i" }}–{{ end|time:"H:i" }}</td></tr>
+      <tr><td>Location</td><td>{{ event.location.name }}, {{ event.location.address }}</td></tr>
+      {% if competition.info %}<tr><td></td><td>{{ competition.info }}</td></tr>{% endif %}
+      <tr><td>Head referee</td><td><strong>{% if head_referee %}{{ head_referee.name }}{% else %}not yet appointed{% endif %}</strong></td></tr>
+    </table>
+    <h3 style="font-size: 1em; margin-bottom: 0.3em;">Invited referees ({{ referees|length }})</h3>
+    <ul>
+      {% for referee in referees %}
+      <li>{% if referee.pk == head_referee.pk %}<strong>{{ referee.name }}</strong> (head referee){% else %}{{ referee.name }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </body>
+</html>

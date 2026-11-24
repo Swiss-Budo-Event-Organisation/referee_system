@@ -117,3 +117,15 @@ def can_apply(user, competition: Competition) -> bool:
     if not user.is_authenticated or not user.is_active:
         return False
     return competition.category.filter(members__in=user.groups.all()).exists()
+
+
+def can_invite(user, competition: Competition) -> bool:
+    """
+    May the user prepare and send the invitation of the competition? Its
+    invitor and staff members may.
+    """
+    if not user.is_authenticated or not user.is_active:
+        return False
+    if user.is_staff or user.is_superuser:
+        return True
+    return competition.invitor.user_id == user.pk
