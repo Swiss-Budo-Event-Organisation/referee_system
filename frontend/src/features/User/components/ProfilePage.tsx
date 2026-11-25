@@ -11,7 +11,7 @@ import ApplicationsList from "./ApplicationsCard"
 import ExaminationCard from "./ExaminationCard"
 import ProfileSection, { SectionField, SectionValues } from "./ProfileSection"
 import EmailStatus from "../../Accounts/components/EmailStatus"
-import { FieldErrors, updateUser } from "../../Accounts/utils/Accounts"
+import { FieldErrors, NOTIFICATION_CHOICES, updateUser } from "../../Accounts/utils/Accounts"
 
 const PERSONAL: SectionField[] = [
     { name: "first_name", label: "First name", required: true, autoComplete: "given-name", md: 6 },
@@ -37,6 +37,14 @@ const SHARING: SectionField[] = [
     { name: "share_mobile", label: "My mobile phone number", type: "switch" },
     { name: "share_dob", label: "My date of birth", type: "switch" },
     { name: "share_address", label: "My address", type: "switch" },
+];
+
+const NOTIFICATIONS: SectionField[] = [
+    {
+        name: "approval_notifications", label: "E-mail me when accounts await approval", type: "select",
+        options: NOTIFICATION_CHOICES,
+        help: "The e-mail only says how many accounts are waiting, without names.",
+    },
 ];
 
 /** The address is optional, but once begun it needs a street and a city. */
@@ -140,6 +148,11 @@ function ProfilePage({ pk }: { pk: number }) {
                     footer={<p className="text-body-secondary small mt-2 mb-0">
                         Your name is always visible to other users; nothing else is unless you allow it.
                     </p>} />
+                {data.is_staff && (
+                    <ProfileSection {...editable("Notifications")} fields={NOTIFICATIONS}
+                        values={{ approval_notifications: data.account?.approval_notifications ?? "never" }}
+                        onSave={(values) => save({ account: values })} />
+                )}
                 <ExaminationCard user={data.id} />
                 <ApplicationsList user={data.id} />
             </Stack>

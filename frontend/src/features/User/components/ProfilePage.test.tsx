@@ -108,6 +108,25 @@ describe("ProfilePage", () => {
     expect(await screen.findByLabelText("IBAN")).toBeInTheDocument();
   });
 
+  it("shows the notifications only to staff members", async () => {
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Personal details" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Notifications" })).not.toBeInTheDocument();
+  });
+
+  it("saves the e-mail setting of staff members", async () => {
+    responses["/api/user/9"] = { ...profile, is_staff: true };
+    const user = userEvent.setup();
+    renderPage();
+    const notifications = await section("Notifications");
+    expect(notifications.getByText("Never")).toBeInTheDocument();
+    await user.click(notifications.getByRole("button", { name: "Edit notifications" }));
+    await user.selectOptions(notifications.getByLabelText("E-mail me when accounts await approval"), "Daily digest");
+    await user.click(notifications.getByRole("button", { name: "Save" }));
+
+    expect(api.patch).toHaveBeenCalledWith("/api/user/9/", { account: { approval_notifications: "daily" } });
+  });
+
   it("edits the phone numbers", async () => {
     const user = userEvent.setup();
     renderPage();

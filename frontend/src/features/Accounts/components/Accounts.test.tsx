@@ -208,14 +208,14 @@ describe("PendingAccounts", () => {
 
   it("refuses non-staff members", async () => {
     localStorage.setItem(ACCESS_TOKEN, makeToken(9));
-    renderWith(<PendingAccounts pk={9} />);
+    renderWith(<PendingAccounts />);
     expect(await screen.findByText("Only staff members may approve accounts.")).toBeInTheDocument();
   });
 
   it("approves an account with a group and an examination", async () => {
     (api.post as Mock).mockResolvedValue({ data: {} });
     const user = userEvent.setup();
-    renderWith(<PendingAccounts pk={7} />);
+    renderWith(<PendingAccounts />);
 
     const row = (await screen.findByText("Paul Pending")).closest("tr") as HTMLElement;
     expect(within(row).getByText("paul@example.com")).toBeInTheDocument();
@@ -240,7 +240,7 @@ describe("PendingAccounts", () => {
   it("deletes a registration after asking", async () => {
     (api.delete as Mock).mockResolvedValue({ data: {} });
     const user = userEvent.setup();
-    renderWith(<PendingAccounts pk={7} />);
+    renderWith(<PendingAccounts />);
 
     const row = (await screen.findByText("Paul Pending")).closest("tr") as HTMLElement;
     await user.click(within(row).getByRole("button", { name: "Delete" }));
@@ -248,16 +248,6 @@ describe("PendingAccounts", () => {
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith("/api/accounts/pending/21/"));
-  });
-
-  it("saves the e-mail setting", async () => {
-    (api.patch as Mock).mockResolvedValue({ data: {} });
-    const user = userEvent.setup();
-    renderWith(<PendingAccounts pk={7} />);
-
-    await user.selectOptions(await screen.findByLabelText("E-mail me when accounts await approval"), "Daily digest");
-
-    await waitFor(() => expect(api.patch).toHaveBeenCalledWith("/api/user/7/", { account: { approval_notifications: "daily" } }));
   });
 });
 

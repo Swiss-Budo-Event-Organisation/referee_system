@@ -11,7 +11,9 @@ export type SectionValues = Record<string, SectionValue>;
 export type SectionField = {
     name: string;
     label: string;
-    type?: "text" | "tel" | "date" | "email" | "switch";
+    type?: "text" | "tel" | "date" | "email" | "switch" | "select";
+    /** The choices of a select. */
+    options?: { value: string; label: string }[];
     required?: boolean;
     autoComplete?: string;
     md?: number;
@@ -44,6 +46,7 @@ type ProfileSectionProps = {
 function shown(field: SectionField, value: SectionValue): ReactNode {
     if (field.display) return field.display(value);
     if (field.type === "switch") return value ? "Yes" : "No";
+    if (field.type === "select") return field.options?.find((option) => option.value === value)?.label ?? String(value ?? "");
     return value ? String(value) : <span className="text-body-secondary">Not given</span>;
 }
 
@@ -115,9 +118,16 @@ function ProfileSection({
                         ) : (
                             <FormField key={field.name} id={id(field.name)} label={field.label} md={field.md ?? 12}
                                 errors={errors[field.name]} required={field.required} help={field.help}>
-                                <Form.Control name={field.name} type={field.type ?? "text"}
-                                    autoComplete={field.autoComplete} defaultValue={String(values[field.name] ?? "")}
-                                    isInvalid={Boolean(errors[field.name])} disabled={saving} />
+                                {field.type === "select" ? (
+                                    <Form.Select name={field.name} defaultValue={String(values[field.name] ?? "")}
+                                        isInvalid={Boolean(errors[field.name])} disabled={saving}>
+                                        {field.options?.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+                                    </Form.Select>
+                                ) : (
+                                    <Form.Control name={field.name} type={field.type ?? "text"}
+                                        autoComplete={field.autoComplete} defaultValue={String(values[field.name] ?? "")}
+                                        isInvalid={Boolean(errors[field.name])} disabled={saving} />
+                                )}
                             </FormField>
                         ))}
                     </Row>
