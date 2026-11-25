@@ -4,6 +4,13 @@ from helper.models import Address
 from helper.models import Location
 
 
+def public_address(address):
+    """Validate that the address is not a referee's personal address."""
+    if address is not None and address.is_personal:
+        raise serializers.ValidationError("This is a personal address.")
+    return address
+
+
 class AddressSerializer(serializers.ModelSerializer):
     class Meta:
         model = Address
@@ -17,7 +24,10 @@ class LocationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         address_data = validated_data.pop("address")
-        address = Address.objects.get_or_create(**address_data)
+        # Reuse a matching address, but never a referee's personal one.
+        address = Address.objects.filter(domiciled=None, **address_data).first()
+        if address is None:
+            address = Address.objects.create(**address_data)
         location = Location.objects.create(address=address, **validated_data)
         return location
 

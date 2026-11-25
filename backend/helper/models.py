@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext as _
 
@@ -16,21 +15,12 @@ class Address(models.Model):
     composed of fields for street, house number, area code, city and country
     string representation gives comma separated concatenation
 
-    An address with a user is that user's personal address. Only they and
-    staff members may look it up; other users see it only in the user's
-    profile, and only if the user shares it. Any other address, such as that
-    of a location, accommodation or examination, may be seen by all users.
+    An address a referee points to is that referee's personal address. It
+    belongs to that referee alone: no other referee, location, accommodation
+    or examination uses it, so changing it affects nobody else. Two referees
+    living together each have their own copy. Any other address may be seen
+    by all users.
     """
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="personal_addresses",
-        verbose_name=_("User"),
-        help_text=_("Set for a personal address, which other users may not see."),
-    )
 
     street = models.CharField(max_length=150, verbose_name=_("Street"))
     house_number = models.CharField(
@@ -59,6 +49,26 @@ class Address(models.Model):
             ]
         )
         return line
+
+    @property
+    def is_personal(self) -> bool:
+        """Whether a referee lives here."""
+        return self.domiciled.exists()
+
+    def is_used(self, except_referee=None) -> bool:
+        """
+        Whether a referee (other than except_referee), location,
+        accommodation or examination uses the address.
+        """
+        referees = self.domiciled.all()
+        if except_referee is not None:
+            referees = referees.exclude(pk=except_referee.pk)
+        return (
+            referees.exists()
+            or self.location_set.exists()
+            or self.accommodation_set.exists()
+            or self.exams.exists()
+        )
 
 
 class Location(models.Model):

@@ -35,6 +35,13 @@ class RefereeLicense(Category):
         verbose_name_plural = _("Referee licenses")
 
 
+def delete_unused_address(pk) -> None:
+    """Delete a former personal address that nothing uses any more."""
+    address = Address.objects.filter(pk=pk).first()
+    if address is not None and not address.is_used():
+        address.delete()
+
+
 class Referee(models.Model):
     """
     Referee
@@ -43,7 +50,8 @@ class Referee(models.Model):
     Fields:
         user (User): User this profile belongs to
         license (RefereeLicense): Highest license this person currently holds
-        address (Address): Living address of the person
+        address (Address): Living address of the person, personal to them
+            (see Address); it is deleted once the referee no longer uses it
         dob (Date): Date of Birth of the person
         share_email, share_phone, share_mobile, share_dob, share_address
             (bool): Whether other users may see that piece of information. The
@@ -54,7 +62,7 @@ class Referee(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name=_("User"))
     address = models.ForeignKey(
         Address,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="domiciled",
@@ -104,6 +112,18 @@ class Referee(models.Model):
         if not self.user.first_name and not self.user.last_name:
             return self.user.username
         return self.name
+
+    def save(self, *args, **kwargs):
+        previous = None
+        if self.pk is not None:
+            previous = (
+                Referee.objects.filter(pk=self.pk)
+                .values_list("address_id", flat=True)
+                .first()
+            )
+        super().save(*args, **kwargs)
+        if previous is not None and previous != self.address_id:
+            delete_unused_address(previous)
 
     @property
     def passed_exams(self) -> models.QuerySet:

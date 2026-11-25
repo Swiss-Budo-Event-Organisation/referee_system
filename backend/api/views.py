@@ -562,9 +562,9 @@ class SendCompetitionInvitationView(CompetitionInvitationView):
 class UpdateAddressView(generics.RetrieveUpdateAPIView):
     """
     Addresses of locations, accommodations and examinations are open to any
-    logged-in user. A personal address (one with a user) is open to whoever
-    may see that user's full profile (see full_profile_users); other users
-    see it only in the user's profile, if the user shares it.
+    logged-in user. A referee's personal address is open to whoever may see
+    that referee's full profile (see full_profile_users); other users see it
+    only in the referee's profile, if the referee shares it.
     """
 
     queryset = Address.objects.all()
@@ -573,9 +573,9 @@ class UpdateAddressView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         address = super().get_object()
-        if address.user_id is None:
+        if not address.is_personal:
             return address
-        if full_profile_users(self.request).filter(pk=address.user_id).exists():
+        if full_profile_users(self.request).filter(referee__address=address).exists():
             return address
         # Don't reveal that the address exists.
         raise NotFound()

@@ -39,11 +39,12 @@ class UserSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
+        # A referee's address is personal: nothing else may use it.
         address = attrs.get("referee", {}).get("address")
-        owner = self.instance.pk if self.instance else None
-        if address is not None and (owner is None or address.user_id != owner):
+        referee = getattr(self.instance, "referee", None)
+        if address is not None and address.is_used(except_referee=referee):
             raise serializers.ValidationError(
-                {"referee": {"address": ["Choose one of your personal addresses."]}}
+                {"referee": {"address": ["This address is used elsewhere."]}}
             )
         return attrs
 

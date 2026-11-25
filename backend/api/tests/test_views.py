@@ -2,6 +2,7 @@ from datetime import date
 from datetime import timedelta
 
 from django.contrib.auth.models import Group
+from django.db.models import ProtectedError
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -16,9 +17,12 @@ from api.tests.helpers import make_user
 from competition.models import Application
 from competition.models import Event
 from competition.models import Invitation
+from competition.serializers import AccommodationSerializer
 from helper.models import Address
+from helper.serializers import LocationSerializer
 from referee.models import Examination
 from referee.models import RefereeLicense
+from referee.serializers import ExaminationSerializer
 
 
 class AuthenticatedTestCase(APITestCase):
@@ -214,7 +218,7 @@ class TestAddress(AuthenticatedTestCase):
     def make_personal(self, username="jane"):
         """Another user with a personal address, which they share."""
         other = make_user(username)
-        address = Address.objects.create(street="Home Street", city="Thun", user=other)
+        address = Address.objects.create(street="Home Street", city="Thun")
         other.referee.address = address
         other.referee.share_address = True
         other.referee.save()
@@ -239,19 +243,49 @@ class TestAddress(AuthenticatedTestCase):
         self.client.force_authenticate(make_user("staff", is_staff=True))
         self.assertEqual(self.client.get(url).status_code, status.HTTP_200_OK)
 
-    def test_address_without_user_is_public(self):
-        # Even one a referee points to: only the user key makes it personal.
-        address = Address.objects.create(street="Dojo Street", city="Bern")
-        other = make_user("jane")
-        other.referee.address = address
-        other.referee.save()
-        response = self.client.get(reverse("address-update", args=[address.pk]))
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+    def test_personal_address_is_protected(self):
+        other, _ = self.make_personal()
+        with self.assertRaises(ProtectedError):
+            other.referee.address.delete()
 
     def test_personal_address_deleted_with_user(self):
         other, _ = self.make_personal()
         other.delete()
         self.assertFalse(Address.objects.filter(street="Home Street").exists())
+
+    def test_former_personal_address_deleted(self):
+        other, _ = self.make_personal()
+        old = other.referee.address
+        other.referee.address = Address.objects.create(street="New", city="Bern")
+        other.referee.save()
+        self.assertFalse(Address.objects.filter(pk=old.pk).exists())
+
+    def test_personal_address_not_for_exams_or_accommodations(self):
+        other, _ = self.make_personal()
+        address = other.referee.address
+        exam = ExaminationSerializer(
+            data={
+                "candidate": self.user.referee.pk,
+                "license": RefereeLicense.objects.get(name="Regional").pk,
+                "date": "2024-05-01",
+                "address": address.pk,
+            }
+        )
+        self.assertFalse(exam.is_valid())
+        self.assertIn("address", exam.errors)
+        accommodation = AccommodationSerializer(
+            data={"event": make_event().pk, "name": "Hotel", "address": address.pk}
+        )
+        self.assertFalse(accommodation.is_valid())
+        self.assertIn("address", accommodation.errors)
+
+    def test_location_does_not_reuse_personal_address(self):
+        other, _ = self.make_personal()
+        location = LocationSerializer().create(
+            {"name": "Dojo", "address": {"street": "Home Street", "city": "Thun"}}
+        )
+        self.assertNotEqual(location.address_id, other.referee.address_id)
+        self.assertEqual(str(location.address), str(other.referee.address))
 
 
 class TestProfiles(AuthenticatedTestCase):
@@ -269,7 +303,7 @@ class TestProfiles(AuthenticatedTestCase):
         )
         referee = other.referee
         referee.address = Address.objects.create(
-            street="Home Street", house_number="3", city="Thun", user=other
+            street="Home Street", house_number="3", city="Thun"
         )
         referee.phone = "031 000 00 00"
         referee.mobile = "079 000 00 00"
@@ -356,22 +390,24 @@ class TestProfiles(AuthenticatedTestCase):
         self.assertFalse(self.user.referee.share_dob)
         self.assertFalse(self.user.referee.share_address)
 
-    def test_own_address_must_be_personal(self):
+    def test_own_address_must_be_unused(self):
         url = reverse("user", args=[self.user.pk])
-        public = Address.objects.create(street="Dojo Street", city="Bern")
+        venue = make_location().address
         jane = make_user("jane")
-        janes = Address.objects.create(street="Home Street", city="Thun", user=jane)
-        for address in (public, janes):
+        jane.referee.address = Address.objects.create(street="Home", city="Thun")
+        jane.referee.save()
+        for address in (venue, jane.referee.address):
             with self.subTest(address=address.street):
                 response = self.client.patch(
                     url, {"referee": {"address": address.pk}}, format="json"
                 )
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        mine = Address.objects.create(street="My Street", city="Bern", user=self.user)
-        response = self.client.patch(
-            url, {"referee": {"address": mine.pk}}, format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        mine = Address.objects.create(street="My Street", city="Bern")
+        for _ in range(2):  # Setting it again keeps it.
+            response = self.client.patch(
+                url, {"referee": {"address": mine.pk}}, format="json"
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.user.referee.refresh_from_db()
         self.assertEqual(self.user.referee.address, mine)
 
@@ -689,7 +725,7 @@ class TestInvitorAccess(AuthenticatedTestCase):
         self.jane = make_user("jane", email="jane@example.com")
         self.jane.referee.iban = "CH00 0000 0000 0000 0000 0"
         self.jane.referee.address = Address.objects.create(
-            street="Home Street", city="Thun", user=self.jane
+            street="Home Street", city="Thun"
         )
         self.jane.referee.save()
         self.application = Application.objects.create(

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from helper.serializers import public_address
 from referee.models import Examination
 from referee.models import Referee
 from referee.models import RefereeLicense
@@ -7,6 +8,9 @@ from referee.models import RefereeRole
 
 
 class ExaminationSerializer(serializers.ModelSerializer):
+    def validate_address(self, address):
+        return public_address(address)
+
     class Meta:
         model = Examination
         fields = [

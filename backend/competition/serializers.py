@@ -20,6 +20,7 @@ from helper.models import Address
 from helper.models import Location
 from helper.serializers import AddressSerializer
 from helper.serializers import LocationSerializer
+from helper.serializers import public_address
 from referee.models import Referee
 
 
@@ -34,6 +35,9 @@ class AccommodationSerializer(serializers.ModelSerializer):
                 message="The accommodation name must be unique for each event.",
             )
         ]
+
+    def validate_address(self, address):
+        return public_address(address)
 
 
 class ApplicationSerializer(serializers.ModelSerializer):
