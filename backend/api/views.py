@@ -550,10 +550,10 @@ class SendCompetitionInvitationView(CompetitionInvitationView):
 
 class UpdateAddressView(generics.RetrieveUpdateAPIView):
     """
-    Addresses of locations and examinations are open to any logged-in user.
-    A referee's home address is only shown to the referee, to staff members
-    and, if the referee shares their contact details, to other users; only
-    the referee and staff members may change it.
+    Addresses of locations, accommodations and examinations are open to any
+    logged-in user. A personal address (one with a user) is only open to its
+    user and to staff members; other users see it only in the user's
+    profile, if the user shares it.
     """
 
     queryset = Address.objects.all()
@@ -562,16 +562,8 @@ class UpdateAddressView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         address = super().get_object()
-        residents = Referee.objects.filter(address=address)
-        if not residents.exists():
-            return address
         user = self.request.user
-        if is_admin(user) or residents.filter(user=user).exists():
-            return address
-        if (
-            self.request.method in SAFE_METHODS
-            and residents.filter(share_contact_details=True).exists()
-        ):
+        if address.user_id is None or address.user_id == user.pk or is_admin(user):
             return address
         # Don't reveal that the address exists.
         raise NotFound()

@@ -45,14 +45,14 @@ class Referee(models.Model):
         license (RefereeLicense): Highest license this person currently holds
         address (Address): Living address of the person
         dob (Date): Date of Birth of the person
-        share_contact_details (bool): Whether other users may see the e-mail
-            address, phone numbers and address
+        share_email, share_phone, share_mobile, share_address (bool): Whether
+            other users may see that piece of contact information
     """
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name=_("User"))
     address = models.ForeignKey(
         Address,
-        on_delete=models.PROTECT,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="domiciled",
@@ -68,10 +68,25 @@ class Referee(models.Model):
     mobile = models.CharField(
         max_length=25, verbose_name=_("Mobile phone number"), default=""
     )
-    share_contact_details = models.BooleanField(
+    share_email = models.BooleanField(
         default=False,
-        verbose_name=_("Share contact details"),
-        help_text=_("Other users may see your e-mail, phone numbers and address."),
+        verbose_name=_("Share e-mail address"),
+        help_text=_("Other users may see your e-mail address."),
+    )
+    share_phone = models.BooleanField(
+        default=False,
+        verbose_name=_("Share phone number"),
+        help_text=_("Other users may see your phone number."),
+    )
+    share_mobile = models.BooleanField(
+        default=False,
+        verbose_name=_("Share mobile phone number"),
+        help_text=_("Other users may see your mobile phone number."),
+    )
+    share_address = models.BooleanField(
+        default=False,
+        verbose_name=_("Share address"),
+        help_text=_("Other users may see your personal address."),
     )
 
     class Meta:

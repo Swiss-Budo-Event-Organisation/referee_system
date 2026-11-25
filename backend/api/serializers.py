@@ -38,6 +38,15 @@ class UserSerializer(serializers.ModelSerializer):
             "is_staff": {"read_only": True},
         }
 
+    def validate(self, attrs):
+        address = attrs.get("referee", {}).get("address")
+        owner = self.instance.pk if self.instance else None
+        if address is not None and (owner is None or address.user_id != owner):
+            raise serializers.ValidationError(
+                {"referee": {"address": ["Choose one of your personal addresses."]}}
+            )
+        return attrs
+
     def get_permissions(self, user) -> list[str]:
         """Model permissions, e.g. "competition.add_event", for the frontend."""
         return sorted(user.get_all_permissions())
@@ -74,13 +83,13 @@ class UserSerializer(serializers.ModelSerializer):
 
 class ProfileSerializer(serializers.ModelSerializer):
     """
-    A user as other users see them. The contact details (e-mail address,
-    phone numbers and address) are null unless the user agreed to share
-    them; the date of birth, IBAN and permissions are never shown.
+    A user as other users see them. Each piece of contact information (the
+    e-mail address, phone number, mobile phone number and personal address)
+    is null unless the user shares it; the date of birth, IBAN and
+    permissions are never shown.
     """
 
     name = serializers.SerializerMethodField()
-    shares_contact_details = serializers.SerializerMethodField()
     email = serializers.SerializerMethodField()
     phone = serializers.SerializerMethodField()
     mobile = serializers.SerializerMethodField()
@@ -94,7 +103,6 @@ class ProfileSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "name",
-            "shares_contact_details",
             "email",
             "phone",
             "mobile",
@@ -106,10 +114,10 @@ class ProfileSerializer(serializers.ModelSerializer):
     def _referee(user):
         return getattr(user, "referee", None)
 
-    def _shared(self, user):
-        """The referee profile if its contact details are shared, else None."""
+    def _shared(self, user, flag):
+        """The referee profile if it shares the given flag, else None."""
         referee = self._referee(user)
-        if referee is not None and referee.share_contact_details:
+        if referee is not None and getattr(referee, flag):
             return referee
         return None
 
@@ -117,22 +125,19 @@ class ProfileSerializer(serializers.ModelSerializer):
         full = " ".join([user.first_name, user.last_name]).strip()
         return full or user.username
 
-    def get_shares_contact_details(self, user) -> bool:
-        return self._shared(user) is not None
-
     def get_email(self, user) -> str | None:
-        return user.email if self._shared(user) else None
+        return user.email if self._shared(user, "share_email") else None
 
     def get_phone(self, user) -> str | None:
-        referee = self._shared(user)
+        referee = self._shared(user, "share_phone")
         return referee.phone if referee else None
 
     def get_mobile(self, user) -> str | None:
-        referee = self._shared(user)
+        referee = self._shared(user, "share_mobile")
         return referee.mobile if referee else None
 
     def get_address(self, user) -> dict | None:
-        referee = self._shared(user)
+        referee = self._shared(user, "share_address")
         if referee is None or referee.address is None:
             return None
         return AddressSerializer(referee.address).data

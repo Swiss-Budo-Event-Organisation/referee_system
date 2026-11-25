@@ -55,7 +55,10 @@ class RefereeSerializer(serializers.ModelSerializer):
             "iban",
             "phone",
             "mobile",
-            "share_contact_details",
+            "share_email",
+            "share_phone",
+            "share_mobile",
+            "share_address",
         ]
         read_only_fields = ["id"]
 

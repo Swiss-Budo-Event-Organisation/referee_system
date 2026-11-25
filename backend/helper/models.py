@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext as _
 
@@ -14,7 +15,22 @@ class Address(models.Model):
     Class to store a regular address
     composed of fields for street, house number, area code, city and country
     string representation gives comma separated concatenation
+
+    An address with a user is that user's personal address. Only they and
+    staff members may look it up; other users see it only in the user's
+    profile, and only if the user shares it. Any other address, such as that
+    of a location, accommodation or examination, may be seen by all users.
     """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="personal_addresses",
+        verbose_name=_("User"),
+        help_text=_("Set for a personal address, which other users may not see."),
+    )
 
     street = models.CharField(max_length=150, verbose_name=_("Street"))
     house_number = models.CharField(
