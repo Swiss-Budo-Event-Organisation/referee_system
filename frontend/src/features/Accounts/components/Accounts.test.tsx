@@ -25,7 +25,7 @@ const staff = {
 const newcomer = {
   id: 9, username: "nina", first_name: "Nina", last_name: "Newbie", email: "nina@example.com",
   is_staff: false, permissions: [], onboarded: false, email_confirmed: true, approval_notifications: "never",
-  referee: { phone: "", mobile: "", dob: null, iban: "", share_email: false, share_phone: false, share_mobile: false, share_dob: false },
+  referee: { phone: "", mobile: "", dob: null, iban: "", share_email: false, share_phone: false, share_mobile: false, share_dob: false, share_address: false },
 };
 const pending = [{
   id: 21, username: "paul", first_name: "Paul", last_name: "Pending", email: "paul@example.com",
@@ -137,9 +137,69 @@ describe("OnboardingForm", () => {
       onboarded: true,
       referee: {
         phone: "", mobile: "079 000 00 00", dob: null, iban: "",
-        share_email: false, share_phone: false, share_mobile: true, share_dob: false,
+        share_email: false, share_phone: false, share_mobile: true, share_dob: false, share_address: false,
       },
     });
+    // No address given, so none is created.
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("creates the personal address", async () => {
+    (api.post as Mock).mockResolvedValue({ data: { id: 30 } });
+    (api.patch as Mock).mockResolvedValue({ data: {} });
+    const user = userEvent.setup();
+    renderWith(<OnboardingForm pk={9} />, "/onboarding");
+
+    await user.type(await screen.findByLabelText("Street"), "Main Street");
+    await user.type(screen.getByLabelText("House number"), "4");
+    await user.type(screen.getByLabelText("Postal code"), "3000");
+    await user.type(screen.getByLabelText("City"), "Bern");
+    await user.click(screen.getByLabelText("My address"));
+    await user.click(screen.getByRole("button", { name: "Save and continue" }));
+
+    expect(await screen.findByRole("heading", { name: "Events page" })).toBeInTheDocument();
+    expect(api.post).toHaveBeenCalledWith("/api/address/", {
+      street: "Main Street", house_number: "4", area_code: "3000", city: "Bern", country: "", personal: true,
+    });
+    expect(api.patch).toHaveBeenCalledWith("/api/user/9/", expect.objectContaining({
+      referee: expect.objectContaining({ share_address: true }),
+    }));
+  });
+
+  it("needs street and city once an address is begun", async () => {
+    const user = userEvent.setup();
+    renderWith(<OnboardingForm pk={9} />, "/onboarding");
+
+    await user.type(await screen.findByLabelText("Postal code"), "3000");
+    await user.click(screen.getByRole("button", { name: "Save and continue" }));
+
+    expect(await screen.findAllByText("This field is required.")).toHaveLength(2);
+    expect(screen.getByLabelText("Street")).toHaveClass("is-invalid");
+    expect(screen.getByLabelText("City")).toHaveClass("is-invalid");
+    expect(api.post).not.toHaveBeenCalled();
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+
+  it("updates an address the user already has", async () => {
+    responses["/api/user/9"] = { ...newcomer, referee: { ...newcomer.referee, address: 12 } };
+    responses["/api/address/12/"] = {
+      id: 12, street: "Old Street", house_number: "1", area_code: "3600", city: "Thun", country: "Switzerland",
+    };
+    (api.patch as Mock).mockResolvedValue({ data: {} });
+    const user = userEvent.setup();
+    renderWith(<OnboardingForm pk={9} />, "/onboarding");
+
+    const street = await screen.findByLabelText("Street");
+    expect(street).toHaveValue("Old Street");
+    await user.clear(street);
+    await user.type(street, "New Street");
+    await user.click(screen.getByRole("button", { name: "Save and continue" }));
+
+    expect(await screen.findByRole("heading", { name: "Events page" })).toBeInTheDocument();
+    expect(api.patch).toHaveBeenCalledWith("/api/address/12/", {
+      street: "New Street", house_number: "1", area_code: "3600", city: "Thun", country: "Switzerland",
+    });
+    expect(api.post).not.toHaveBeenCalled();
   });
 });
 
