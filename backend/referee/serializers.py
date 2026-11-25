@@ -23,6 +23,28 @@ class ExaminationSerializer(serializers.ModelSerializer):
         ]
 
 
+class OwnExaminationSerializer(serializers.ModelSerializer):
+    """
+    An examination as its candidate sees it, without the internal note
+    meant for the examination committee.
+    """
+
+    class Meta:
+        model = Examination
+        fields = [
+            "id",
+            "candidate",
+            "license",
+            "chief_examiner",
+            "date",
+            "address",
+            "grade",
+            "passed",
+            "note_external",
+        ]
+        read_only_fields = fields
+
+
 class RefereeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Referee

@@ -476,3 +476,21 @@ class TestExaminations(AuthenticatedTestCase):
         self.assertEqual(exam["candidate"], self.user.referee.pk)
         self.assertEqual(exam["date"], "2024-05-01")
         self.assertTrue(exam["passed"])
+
+    def test_list_hides_internal_note(self):
+        regional = RefereeLicense.objects.get(name="Regional")
+        Examination.create(
+            self.user,
+            license=regional,
+            date=date(2024, 5, 1),
+            note_internal="For the committee only",
+            note_external="Well done",
+        )
+
+        response = self.client.get(reverse("examinations-user"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        exam = response.data[0]
+        self.assertNotIn("note_internal", exam)
+        self.assertNotIn("For the committee only", str(response.content))
+        self.assertEqual(exam["note_external"], "Well done")

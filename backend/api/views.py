@@ -58,6 +58,7 @@ from referee.models import Referee
 from referee.models import RefereeLicense
 from referee.permissions import can_examine
 from referee.serializers import ExaminationSerializer
+from referee.serializers import OwnExaminationSerializer
 from referee.serializers import RefereeLicenseSerializer
 from referee.serializers import RefereeOptionSerializer
 
@@ -579,7 +580,11 @@ class CreateExaminationView(generics.CreateAPIView):
 
 
 class ListExaminationsView(generics.ListAPIView):
-    serializer_class = ExaminationSerializer
+    """
+    The logged-in referee's own examinations, without the internal note.
+    """
+
+    serializer_class = OwnExaminationSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
