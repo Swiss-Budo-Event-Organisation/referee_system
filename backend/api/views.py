@@ -9,7 +9,6 @@ from rest_framework.exceptions import NotFound
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import SAFE_METHODS
-from rest_framework.permissions import AllowAny
 from rest_framework.permissions import BasePermission
 from rest_framework.permissions import DjangoModelPermissions
 from rest_framework.permissions import IsAuthenticated
@@ -17,7 +16,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.serializers import ProfileSerializer
-from api.serializers import UserCreateSerializer
 from api.serializers import UserSerializer
 from competition.invitations import current_invitation
 from competition.invitations import missing_emails
@@ -94,12 +92,6 @@ def _keep_fixed_fields(serializer, instance, *fields):
         value = serializer.validated_data.get(field, getattr(instance, field))
         if value != getattr(instance, field):
             raise ValidationError({field: "This field cannot be changed."})
-
-
-class CreateUserView(generics.CreateAPIView):
-    queryset = User.objects.all()
-    serializer_class = UserCreateSerializer
-    permission_classes = [AllowAny]
 
 
 def is_admin(user) -> bool:

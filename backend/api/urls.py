@@ -3,13 +3,19 @@ from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from accounts.views import ApproveAccountView
+from accounts.views import ConfirmEmailView
+from accounts.views import GroupListView
+from accounts.views import PendingAccountDetailView
+from accounts.views import PendingAccountsView
+from accounts.views import RegisterView
+from accounts.views import SendConfirmationView
 from api.views import CompetitionApplicationsView
 from api.views import CompetitionInvitationView
 from api.views import CreateCompetitionView
 from api.views import CreateEventWithCompetitionsView
 from api.views import CreateExaminationView
 from api.views import CreateListApplicationView
-from api.views import CreateUserView
 from api.views import DetailCompetitionView
 from api.views import DetailEventView
 from api.views import DetailLicenseView
@@ -35,7 +41,25 @@ from api.views import UpdateAddressView
 from api.views import UpdateUserView
 
 urlpatterns = [
-    path("user/register/", CreateUserView.as_view(), name="user-register"),
+    path("user/register/", RegisterView.as_view(), name="user-register"),
+    path("accounts/pending/", PendingAccountsView.as_view(), name="pending-list"),
+    path(
+        "accounts/pending/<int:pk>/",
+        PendingAccountDetailView.as_view(),
+        name="pending-detail",
+    ),
+    path(
+        "accounts/pending/<int:pk>/approve/",
+        ApproveAccountView.as_view(),
+        name="pending-approve",
+    ),
+    path("accounts/groups/", GroupListView.as_view(), name="group-list"),
+    path("accounts/confirm-email/", ConfirmEmailView.as_view(), name="confirm-email"),
+    path(
+        "accounts/confirm-email/send/",
+        SendConfirmationView.as_view(),
+        name="confirm-email-send",
+    ),
     path("user/<int:pk>/", DetailUserView.as_view(), name="user"),
     path("user/<int:pk>/update/", UpdateUserView.as_view(), name="user"),
     path("profiles/", ListProfilesView.as_view(), name="profile-list"),

@@ -26,7 +26,7 @@ from referee.models import Referee
 from referee.models import RefereeLicense
 from referee.models import RefereeRole
 
-PROJECT_APPS = {"competition", "referee", "helper"}
+PROJECT_APPS = {"accounts", "competition", "referee", "helper"}
 
 
 class TestAdmin(TestCase):

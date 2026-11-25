@@ -1,9 +1,7 @@
-import { useSearchParams } from "react-router-dom";
-import UserForm from "../features/User/components/UserForm"
+import RegisterForm from "../features/Accounts/components/RegisterForm";
 
 function Register() {
-    const next = useSearchParams()[0].get("next");
-    return <UserForm route="/api/user/register/" method="register" next={next} />
+    return <RegisterForm />
 }
 
 export default Register

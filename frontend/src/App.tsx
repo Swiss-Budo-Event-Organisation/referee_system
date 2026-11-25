@@ -4,6 +4,7 @@ import LoadingIndicator from "./components/LoadingIndicator";
 import { UserContext } from "./layouts/MainLayout";
 
 const CompetitionInvitation = lazy(() => import("./pages/CompetitionInvitation"));
+const ConfirmEmail = lazy(() => import("./pages/ConfirmEmail"));
 const EventOverview = lazy(() => import("./pages/EventOverview"));
 const EventCreate = lazy(() => import("./pages/EventCreate"));
 const EventDetail = lazy(() => import("./pages/EventDetail"));
@@ -12,6 +13,8 @@ const EventDetails = lazy(() => import("./pages/EventDetails"));
 const Login = lazy(() => import("./pages/Login"));
 const MainLayout = lazy(() => import("./layouts/MainLayout"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const Onboarding = lazy(() => import("./pages/Onboarding"));
+const PendingAccounts = lazy(() => import("./pages/PendingAccounts"));
 const ProtectedRoute = lazy(() => import("./components/ProtectedRoute"));
 const Register = lazy(() => import("./pages/Register"));
 const UserProfile = lazy(() => import("./pages/UserProfile"));
@@ -82,6 +85,25 @@ function App() {
             <ProtectedRoute>
               <UserProfile />
             </ProtectedRoute>
+          </Suspense>
+        } />
+        <Route path="onboarding" element={
+          <Suspense fallback={<LoadingIndicator size="15rem" />}>
+            <ProtectedRoute>
+              <Onboarding />
+            </ProtectedRoute>
+          </Suspense>
+        } />
+        <Route path="accounts/pending" element={
+          <Suspense fallback={<LoadingIndicator size="15rem" />}>
+            <ProtectedRoute>
+              <PendingAccounts />
+            </ProtectedRoute>
+          </Suspense>
+        } />
+        <Route path="confirm-email" element={
+          <Suspense fallback={<LoadingIndicator size="15rem" />}>
+            <ConfirmEmail />
           </Suspense>
         } />
         <Route path="login" element={

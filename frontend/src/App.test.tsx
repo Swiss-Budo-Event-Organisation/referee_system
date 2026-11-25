@@ -177,6 +177,19 @@ describe("App", () => {
     expect(await screen.findByText("Your application was received and registered.")).toBeInTheDocument();
   });
 
+  it("sends users who have not completed their profile to the onboarding", async () => {
+    const profile = responses["/api/user/7"] as object;
+    responses["/api/user/7"] = { ...profile, onboarded: false, referee: {} };
+    try {
+      logIn();
+      renderApp("/events/");
+      expect(await screen.findByRole("heading", { name: /Welcome/ })).toBeInTheDocument();
+      expect(window.location.pathname).toBe("/onboarding");
+    } finally {
+      responses["/api/user/7"] = profile;
+    }
+  });
+
   it("shows when registration is closed instead of the apply button", async () => {
     responses["/api/events/1"] = {
       ...events[0],

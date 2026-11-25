@@ -1,0 +1,8 @@
+{% autoescape off %}Dear {{ name }}
+
+Your account has been approved. Please open this link to confirm your e-mail address and complete your profile:
+
+{{ url }}
+
+The link is valid for 14 days.
+{% endautoescape %}

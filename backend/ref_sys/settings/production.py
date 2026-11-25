@@ -28,6 +28,7 @@ SECRET_KEY = required("SECRET_KEY")
 DOMAIN = required("DOMAIN")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[DOMAIN])
 CSRF_TRUSTED_ORIGINS = [f"https://{host}" for host in ALLOWED_HOSTS]
+FRONTEND_URL = env.str("FRONTEND_URL", default=f"https://{DOMAIN}").rstrip("/")
 
 # Database
 DATABASES = database_config()

@@ -4,6 +4,7 @@ import { useAddressQuery } from "../../../hooks/useQueries"
 import { useProfileQuery } from "../hooks/useUserQueries"
 import ApplicationsList from "./ApplicationsCard"
 import ExaminationCard from "./ExaminationCard"
+import EmailStatus from "../../Accounts/components/EmailStatus"
 
 function ProfilePage({ pk }: { pk: number }) {
     const profileQuery = useProfileQuery(pk);
@@ -13,6 +14,7 @@ function ProfilePage({ pk }: { pk: number }) {
         <>
             <h2>{profileQuery.data.first_name} {profileQuery.data.last_name} ({profileQuery.data.username})</h2>
             <Stack gap={2}>
+                <EmailStatus email={profileQuery.data.email ?? ""} confirmed={Boolean(profileQuery.data.email_confirmed)} />
                 {addressQuery.data != null &&
                     <Card>
                         <CardHeader>

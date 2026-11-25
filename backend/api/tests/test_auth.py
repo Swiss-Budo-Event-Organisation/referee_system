@@ -9,15 +9,22 @@ from api.tests.helpers import make_user
 
 
 class TestRegistration(APITestCase):
-    def test_register_creates_user_with_hashed_password_and_profile(self):
-        response = self.client.post(
-            reverse("user-register"),
-            {"username": "newbie", "password": "s3cret-Pa55word"},
-            format="json",
-        )
+    def register(self, **data):
+        payload = {
+            "username": "newbie",
+            "email": "newbie@example.com",
+            "first_name": "New",
+            "last_name": "Bie",
+            "password": "s3cret-Pa55word",
+            "password_repeat": "s3cret-Pa55word",
+            **data,
+        }
+        return self.client.post(reverse("user-register"), payload, format="json")
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["username"], "newbie")
+    def test_register_creates_user_with_hashed_password_and_profile(self):
+        response = self.register()
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertNotIn("password", response.data)
         user = User.objects.get(username="newbie")
         self.assertTrue(user.check_password("s3cret-Pa55word"))
@@ -29,11 +36,7 @@ class TestRegistration(APITestCase):
 
     def test_register_rejects_duplicate_username(self):
         make_user("taken")
-        response = self.client.post(
-            reverse("user-register"),
-            {"username": "taken", "password": "whatever"},
-            format="json",
-        )
+        response = self.register(username="taken")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("username", response.data)
 

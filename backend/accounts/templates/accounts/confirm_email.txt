@@ -1,0 +1,8 @@
+{% autoescape off %}Dear {{ name }}
+
+Please open this link to confirm your e-mail address:
+
+{{ url }}
+
+The link is valid for 14 days. If you did not ask for it, you can ignore this e-mail.
+{% endautoescape %}
