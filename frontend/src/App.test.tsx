@@ -82,7 +82,7 @@ const responses: Record<string, unknown> = {
     id: 7, username: "john", first_name: "John", last_name: "Doe", referee: { address: 5 },
     permissions: ["competition.add_event"],
   },
-  "/api/examinations/user/": [{ id: 1, candidate: 7, license: 1, passed: true, date: "2024-05-01", note_internal: "", note_external: "" }],
+  "/api/examinations/user/": [{ id: 1, candidate: 7, license: 1, passed: true, date: "2024-05-01", note_external: "" }],
   "/api/applications/": [],
   "/api/locations/": [location],
   "/api/categories/": [
