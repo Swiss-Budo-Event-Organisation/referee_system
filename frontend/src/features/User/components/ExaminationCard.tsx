@@ -1,9 +1,11 @@
-import { Card, CardBody, CardHeader, CardText, CardTitle } from "react-bootstrap"
+import { useState } from "react"
+import { Button, Card, CardBody, CardHeader, CardText, CardTitle } from "react-bootstrap"
 import { ExamType } from "../../../lib/types"
 import { license } from "../../../lib/helper"
 import LoadingIndicator from "../../../components/LoadingIndicator"
 import { useLicenseQuery } from "../../../hooks/useQueries"
 import { useExaminationQuery } from "../hooks/useUserQueries"
+import ExaminationModal from "./ExaminationModal"
 
 function ExaminationCard({ user }: { user: number }) {
     const examinationQuery = useExaminationQuery(user);
@@ -26,10 +28,27 @@ function ExaminationCard({ user }: { user: number }) {
 function Examination({ exam }: { exam: ExamType }) {
     const licenseQuery = useLicenseQuery();
     if (licenseQuery.isLoading) return <LoadingIndicator center={false} ></LoadingIndicator>
-    if (exam.passed) {
-        return <CardText><>{license(exam.license, licenseQuery.data)} ({exam.date}) <i className="bi bi-check text-success" aria-label="passed"></i></></CardText>
-    }
-    return <CardText><span style={{ color: "gray" }}><>{license(exam.license, licenseQuery.data)} ({exam.date})</></span> <i className="bi bi-x text-danger" aria-label="failed"></i></CardText>
+    const name = license(exam.license, licenseQuery.data);
+    const summary = exam.passed
+        ? <>{name} ({exam.date}) <i className="bi bi-check text-success" aria-label="passed"></i></>
+        : <><span style={{ color: "gray" }}>{name} ({exam.date})</span> <i className="bi bi-x text-danger" aria-label="failed"></i></>
+    return <CardText className="d-flex align-items-center column-gap-2">
+        <span className="me-auto">{summary}</span>
+        <ShowExamination exam={exam} />
+    </CardText>
+}
+
+/** A button opening the details of one of the user's examinations. */
+function ShowExamination({ exam }: { exam: ExamType }) {
+    const [show, setShow] = useState(false);
+    return (
+        <>
+            <Button variant="outline-primary" size="sm" onClick={() => setShow(true)}>
+                <i className="bi bi-eye me-1" aria-hidden="true" /> Details
+            </Button>
+            <ExaminationModal exam={exam} show={show} onHide={() => setShow(false)} />
+        </>
+    );
 }
 
 
