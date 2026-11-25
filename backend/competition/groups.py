@@ -22,6 +22,9 @@ MANAGED_MODELS = {
         "application",
         "invitation",
     ],
+    # Addresses of locations, accommodations and examinations (see
+    # helper.models.Address); personal addresses are protected separately.
+    "helper": ["address"],
 }
 # Models admins and observers may view only.
 VIEW_ONLY_MODELS = {

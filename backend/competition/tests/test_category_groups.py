@@ -1,4 +1,5 @@
 from django.contrib.auth.models import Group
+from django.contrib.auth.models import User
 from django.test import TestCase
 
 from competition.models import CompetitionCategory
@@ -25,7 +26,11 @@ class TestCategoryGroups(TestCase):
         )
         self.assertNotIn("change_competitioncategory", admin)
         self.assertNotIn("change_referee", admin)
+        self.assertTrue(
+            {"add_address", "change_address", "delete_address", "view_address"} <= admin
+        )
         self.assertIn("view_competition", observer)
+        self.assertIn("view_address", observer)
         self.assertFalse(any(not c.startswith("view_") for c in observer))
         member = Group.objects.get(name="Kata")
         self.assertFalse(member.permissions.exists())
@@ -101,9 +106,24 @@ class TestCategoryGroups(TestCase):
                 self.assertEqual(category.observers.name, f"{name} Observer")
                 admin = category.admins.permissions.values_list("codename", flat=True)
                 self.assertIn("delete_competition", admin)
+                self.assertIn("add_address", admin)
+                self.assertIn("change_address", admin)
                 self.assertNotIn("change_competitioncategory", admin)
                 self.assertTrue(
                     category.observers.permissions.filter(
                         codename="view_competition"
                     ).exists()
                 )
+
+    def test_category_admins_may_manage_addresses(self):
+        admin = User.objects.create_user("admin1")
+        admin.groups.add(Group.objects.get(name="Region 1 Admin"))
+        observer = User.objects.create_user("observer1")
+        observer.groups.add(Group.objects.get(name="Region 1 Observer"))
+        member = User.objects.create_user("member1")
+        member.groups.add(Group.objects.get(name="Region 1"))
+        for perm in ("add_address", "change_address", "delete_address"):
+            with self.subTest(perm=perm):
+                self.assertTrue(admin.has_perm(f"helper.{perm}"))
+                self.assertFalse(observer.has_perm(f"helper.{perm}"))
+                self.assertFalse(member.has_perm(f"helper.{perm}"))
