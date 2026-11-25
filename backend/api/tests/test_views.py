@@ -15,6 +15,7 @@ from api.tests.helpers import make_event
 from api.tests.helpers import make_location
 from api.tests.helpers import make_user
 from competition.models import Application
+from competition.models import CompetitionCategory
 from competition.models import Event
 from competition.models import Invitation
 from competition.serializers import AccommodationSerializer
@@ -45,7 +46,7 @@ class TestAnonymousAccess(APITestCase):
             reverse("user", args=[1]),
             reverse("profile-list"),
             reverse("profile-detail", args=[1]),
-            reverse("address-update", args=[1]),
+            reverse("address-detail", args=[1]),
         ]
         for url in urls:
             with self.subTest(url=url):
@@ -202,18 +203,99 @@ class TestLicenses(AuthenticatedTestCase):
 class TestAddress(AuthenticatedTestCase):
     def test_retrieve_and_update(self):
         address = Address.objects.create(street="Old Street", city="Bern")
-        url = reverse("address-update", args=[address.pk])
+        url = reverse("address-detail", args=[address.pk])
 
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["street"], "Old Street")
 
+        response = self.client.patch(url, {"street": "New Street"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.client.force_authenticate(grant(self.user, "change_address"))
         response = self.client.patch(
             url, {"street": "New Street", "house_number": "4"}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         address.refresh_from_db()
         self.assertEqual(str(address), "New Street 4, Bern, ")
+
+    def test_staff_may_update_any_address(self):
+        self.client.force_authenticate(make_user("staff", is_staff=True))
+        public = Address.objects.create(street="Old Street", city="Bern")
+        _, personal = self.make_personal()
+        for url in (reverse("address-detail", args=[public.pk]), personal):
+            with self.subTest(url=url):
+                response = self.client.patch(url, {"city": "Biel"}, format="json")
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(Address.objects.filter(city="Biel").count(), 2)
+
+    def test_category_admin_may_update_public_address(self):
+        CompetitionCategory.objects.get(name="National").admins.user_set.add(self.user)
+        address = Address.objects.create(street="Old Street", city="Bern")
+        url = reverse("address-detail", args=[address.pk])
+        response = self.client.patch(url, {"street": "New Street"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def create(self, **data):
+        fields = {"street": "Home Street", "house_number": "1", "city": "Bern"}
+        return self.client.post(
+            reverse("address-create"), {**fields, **data}, format="json"
+        )
+
+    def test_create_personal_address(self):
+        old = Address.objects.create(street="Old Street", city="Thun")
+        self.user.referee.address = old
+        self.user.referee.save()
+
+        response = self.create()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertNotIn("personal", response.data)
+        self.user.referee.refresh_from_db()
+        self.assertEqual(self.user.referee.address_id, response.data["id"])
+        # The previous personal address is gone.
+        self.assertFalse(Address.objects.filter(pk=old.pk).exists())
+
+    def test_create_public_address_requires_permission(self):
+        response = self.create(personal=False)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Address.objects.exists())
+
+    def test_create_public_address(self):
+        self.client.force_authenticate(grant(self.user, "add_address"))
+        response = self.create(personal=False)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        address = Address.objects.get(pk=response.data["id"])
+        self.assertFalse(address.is_personal)
+        self.user.referee.refresh_from_db()
+        self.assertIsNone(self.user.referee.address)
+
+    def test_personal_address_cannot_be_deleted(self):
+        other, url = self.make_personal()
+        for user in (other, make_user("staff", is_staff=True)):
+            with self.subTest(user=user.username):
+                self.client.force_authenticate(user)
+                response = self.client.delete(url)
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Address.objects.filter(street="Home Street").exists())
+
+    def test_delete_public_address(self):
+        address = Address.objects.create(street="Old Street", city="Bern")
+        url = reverse("address-detail", args=[address.pk])
+        self.assertEqual(self.client.delete(url).status_code, status.HTTP_403_FORBIDDEN)
+
+        self.client.force_authenticate(grant(self.user, "delete_address"))
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Address.objects.filter(pk=address.pk).exists())
+
+    def test_used_public_address_cannot_be_deleted(self):
+        location = make_location()
+        self.client.force_authenticate(make_user("staff", is_staff=True))
+        url = reverse("address-detail", args=[location.address_id])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(Address.objects.filter(pk=location.address_id).exists())
 
     def make_personal(self, username="jane"):
         """Another user with a personal address, which they share."""
@@ -222,7 +304,7 @@ class TestAddress(AuthenticatedTestCase):
         other.referee.address = address
         other.referee.share_address = True
         other.referee.save()
-        return other, reverse("address-update", args=[address.pk])
+        return other, reverse("address-detail", args=[address.pk])
 
     def test_personal_address_hidden_from_others(self):
         # Even if shared: others see it only in the profile.
@@ -750,7 +832,7 @@ class TestInvitorAccess(AuthenticatedTestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["email"], "jane@example.com")
         self.assertEqual(response.data["referee"]["iban"], "CH00 0000 0000 0000 0000 0")
-        address = reverse("address-update", args=[self.jane.referee.address_id])
+        address = reverse("address-detail", args=[self.jane.referee.address_id])
         self.assertEqual(self.client.get(address).status_code, status.HTTP_200_OK)
 
     def test_invitor_may_not_change_profile(self):
@@ -759,7 +841,7 @@ class TestInvitorAccess(AuthenticatedTestCase):
             with self.subTest(url=url):
                 response = self.client.patch(url, {"first_name": "X"}, format="json")
                 self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        address = reverse("address-update", args=[self.jane.referee.address_id])
+        address = reverse("address-detail", args=[self.jane.referee.address_id])
         response = self.client.patch(address, {"street": "X"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 

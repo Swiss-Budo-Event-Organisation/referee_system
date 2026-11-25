@@ -17,6 +17,18 @@ class AddressSerializer(serializers.ModelSerializer):
         fields = ["id", "street", "house_number", "area_code", "city", "country"]
 
 
+class NewAddressSerializer(AddressSerializer):
+    """
+    A new address. A personal one becomes the requester's own address,
+    replacing their previous one; any other is public.
+    """
+
+    personal = serializers.BooleanField(default=True, write_only=True)
+
+    class Meta(AddressSerializer.Meta):
+        fields = [*AddressSerializer.Meta.fields, "personal"]
+
+
 class LocationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Location

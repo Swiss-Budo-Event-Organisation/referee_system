@@ -10,8 +10,10 @@ from accounts.views import PendingAccountDetailView
 from accounts.views import PendingAccountsView
 from accounts.views import RegisterView
 from accounts.views import SendConfirmationView
+from api.views import AddressView
 from api.views import CompetitionApplicationsView
 from api.views import CompetitionInvitationView
+from api.views import CreateAddressView
 from api.views import CreateCompetitionView
 from api.views import CreateEventWithCompetitionsView
 from api.views import CreateExaminationView
@@ -37,7 +39,6 @@ from api.views import ListRefereesView
 from api.views import ManageApplicationView
 from api.views import OwnApplicationInvitationView
 from api.views import SendCompetitionInvitationView
-from api.views import UpdateAddressView
 from api.views import UpdateUserView
 
 urlpatterns = [
@@ -137,7 +138,8 @@ urlpatterns = [
         ManageApplicationView.as_view(),
         name="application-manage",
     ),
-    path("address/<int:pk>/", UpdateAddressView.as_view(), name="address-update"),
+    path("address/", CreateAddressView.as_view(), name="address-create"),
+    path("address/<int:pk>/", AddressView.as_view(), name="address-detail"),
     path("examinations/", CreateExaminationView.as_view(), name="examination-create"),
     path(
         "examinations/user/", ListExaminationsView.as_view(), name="examinations-user"
