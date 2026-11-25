@@ -2,6 +2,7 @@ from datetime import date
 from datetime import timedelta
 
 from django.contrib.auth.models import Group
+from django.db.models import ProtectedError
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -15,9 +16,13 @@ from api.tests.helpers import make_location
 from api.tests.helpers import make_user
 from competition.models import Application
 from competition.models import Event
+from competition.models import Invitation
+from competition.serializers import AccommodationSerializer
 from helper.models import Address
+from helper.serializers import LocationSerializer
 from referee.models import Examination
 from referee.models import RefereeLicense
+from referee.serializers import ExaminationSerializer
 
 
 class AuthenticatedTestCase(APITestCase):
@@ -38,6 +43,9 @@ class TestAnonymousAccess(APITestCase):
             reverse("application-create-list"),
             reverse("examinations-user"),
             reverse("user", args=[1]),
+            reverse("profile-list"),
+            reverse("profile-detail", args=[1]),
+            reverse("address-update", args=[1]),
         ]
         for url in urls:
             with self.subTest(url=url):
@@ -207,6 +215,202 @@ class TestAddress(AuthenticatedTestCase):
         address.refresh_from_db()
         self.assertEqual(str(address), "New Street 4, Bern, ")
 
+    def make_personal(self, username="jane"):
+        """Another user with a personal address, which they share."""
+        other = make_user(username)
+        address = Address.objects.create(street="Home Street", city="Thun")
+        other.referee.address = address
+        other.referee.share_address = True
+        other.referee.save()
+        return other, reverse("address-update", args=[address.pk])
+
+    def test_personal_address_hidden_from_others(self):
+        # Even if shared: others see it only in the profile.
+        _, url = self.make_personal()
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_404_NOT_FOUND)
+        response = self.client.patch(url, {"street": "X"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_own_personal_address(self):
+        other, url = self.make_personal()
+        self.client.force_authenticate(other)
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_200_OK)
+        response = self.client.patch(url, {"street": "New Street"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_staff_sees_personal_address(self):
+        _, url = self.make_personal()
+        self.client.force_authenticate(make_user("staff", is_staff=True))
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_200_OK)
+
+    def test_personal_address_is_protected(self):
+        other, _ = self.make_personal()
+        with self.assertRaises(ProtectedError):
+            other.referee.address.delete()
+
+    def test_personal_address_deleted_with_user(self):
+        other, _ = self.make_personal()
+        other.delete()
+        self.assertFalse(Address.objects.filter(street="Home Street").exists())
+
+    def test_former_personal_address_deleted(self):
+        other, _ = self.make_personal()
+        old = other.referee.address
+        other.referee.address = Address.objects.create(street="New", city="Bern")
+        other.referee.save()
+        self.assertFalse(Address.objects.filter(pk=old.pk).exists())
+
+    def test_personal_address_not_for_exams_or_accommodations(self):
+        other, _ = self.make_personal()
+        address = other.referee.address
+        exam = ExaminationSerializer(
+            data={
+                "candidate": self.user.referee.pk,
+                "license": RefereeLicense.objects.get(name="Regional").pk,
+                "date": "2024-05-01",
+                "address": address.pk,
+            }
+        )
+        self.assertFalse(exam.is_valid())
+        self.assertIn("address", exam.errors)
+        accommodation = AccommodationSerializer(
+            data={"event": make_event().pk, "name": "Hotel", "address": address.pk}
+        )
+        self.assertFalse(accommodation.is_valid())
+        self.assertIn("address", accommodation.errors)
+
+    def test_location_does_not_reuse_personal_address(self):
+        other, _ = self.make_personal()
+        location = LocationSerializer().create(
+            {"name": "Dojo", "address": {"street": "Home Street", "city": "Thun"}}
+        )
+        self.assertNotEqual(location.address_id, other.referee.address_id)
+        self.assertEqual(str(location.address), str(other.referee.address))
+
+
+class TestProfiles(AuthenticatedTestCase):
+    FLAGS = {
+        "email": "share_email",
+        "phone": "share_phone",
+        "mobile": "share_mobile",
+        "dob": "share_dob",
+        "address": "share_address",
+    }
+
+    def make_other(self, **flags):
+        other = make_user(
+            "jane", first_name="Jane", last_name="Roe", email="jane@example.com"
+        )
+        referee = other.referee
+        referee.address = Address.objects.create(
+            street="Home Street", house_number="3", city="Thun"
+        )
+        referee.phone = "031 000 00 00"
+        referee.mobile = "079 000 00 00"
+        referee.iban = "CH00 0000 0000 0000 0000 0"
+        referee.dob = date(1990, 1, 1)
+        for flag, value in flags.items():
+            setattr(referee, flag, value)
+        referee.save()
+        return other
+
+    def profile(self, user):
+        response = self.client.get(reverse("profile-detail", args=[user.pk]))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response.data
+
+    def assert_never_private(self, data):
+        for field in ("iban", "permissions", "is_staff", "password"):
+            self.assertNotIn(field, data)
+        self.assertNotIn("CH00", str(data))
+
+    def test_redacted_by_default(self):
+        data = self.profile(self.make_other())
+        self.assertEqual(data["name"], "Jane Roe")
+        for field in self.FLAGS:
+            self.assertIsNone(data[field], field)
+        self.assert_never_private(data)
+
+    def test_each_flag_shares_only_its_field(self):
+        expected = {
+            "email": "jane@example.com",
+            "phone": "031 000 00 00",
+            "mobile": "079 000 00 00",
+            "dob": "1990-01-01",
+        }
+        for field, flag in self.FLAGS.items():
+            with self.subTest(flag=flag):
+                other = self.make_other(**{flag: True})
+                data = self.profile(other)
+                if field == "address":
+                    self.assertEqual(data["address"]["street"], "Home Street")
+                else:
+                    self.assertEqual(data[field], expected[field])
+                for hidden in set(self.FLAGS) - {field}:
+                    self.assertIsNone(data[hidden], hidden)
+                self.assert_never_private(data)
+                other.delete()
+
+    def test_list_profiles(self):
+        self.make_other(share_phone=True)
+        make_user("inactive", is_active=False)
+
+        response = self.client.get(reverse("profile-list"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        by_name = {p["username"]: p for p in response.data}
+        self.assertEqual(sorted(by_name), ["jane", "john"])
+        self.assertEqual(by_name["jane"]["phone"], "031 000 00 00")
+        self.assertIsNone(by_name["jane"]["email"])
+        for profile in response.data:
+            self.assert_never_private(profile)
+
+    def test_full_profile_only_for_owner_and_staff(self):
+        other = self.make_other()
+        url = reverse("user", args=[other.pk])
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_404_NOT_FOUND)
+
+        self.client.force_authenticate(make_user("staff", is_staff=True))
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["email"], "jane@example.com")
+        self.assertEqual(response.data["referee"]["iban"], "CH00 0000 0000 0000 0000 0")
+
+    def test_owner_sets_flags(self):
+        response = self.client.patch(
+            reverse("user", args=[self.user.pk]),
+            {"referee": {"share_email": True, "share_mobile": True}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.user.referee.refresh_from_db()
+        self.assertTrue(self.user.referee.share_email)
+        self.assertTrue(self.user.referee.share_mobile)
+        self.assertFalse(self.user.referee.share_phone)
+        self.assertFalse(self.user.referee.share_dob)
+        self.assertFalse(self.user.referee.share_address)
+
+    def test_own_address_must_be_unused(self):
+        url = reverse("user", args=[self.user.pk])
+        venue = make_location().address
+        jane = make_user("jane")
+        jane.referee.address = Address.objects.create(street="Home", city="Thun")
+        jane.referee.save()
+        for address in (venue, jane.referee.address):
+            with self.subTest(address=address.street):
+                response = self.client.patch(
+                    url, {"referee": {"address": address.pk}}, format="json"
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        mine = Address.objects.create(street="My Street", city="Bern")
+        for _ in range(2):  # Setting it again keeps it.
+            response = self.client.patch(
+                url, {"referee": {"address": mine.pk}}, format="json"
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.user.referee.refresh_from_db()
+        self.assertEqual(self.user.referee.address, mine)
+
 
 class TestUser(AuthenticatedTestCase):
     def test_own_user_detail(self):
@@ -219,8 +423,24 @@ class TestUser(AuthenticatedTestCase):
         self.assertEqual(response.data["referee"]["id"], self.user.referee.pk)
         self.assertEqual(
             set(response.data["referee"]),
-            {"id", "address", "dob", "iban", "phone", "mobile"},
+            {
+                "id",
+                "address",
+                "dob",
+                "iban",
+                "phone",
+                "mobile",
+                "share_email",
+                "share_phone",
+                "share_mobile",
+                "share_dob",
+                "share_address",
+            },
         )
+        self.assertIn("email", response.data)
+        flags = ("share_email", "share_phone", "share_mobile", "share_dob")
+        for flag in (*flags, "share_address"):
+            self.assertFalse(response.data["referee"][flag], flag)
         self.assertEqual(response.data["permissions"], [])
         self.assertFalse(response.data["is_staff"])
 
@@ -476,3 +696,94 @@ class TestExaminations(AuthenticatedTestCase):
         self.assertEqual(exam["candidate"], self.user.referee.pk)
         self.assertEqual(exam["date"], "2024-05-01")
         self.assertTrue(exam["passed"])
+
+    def test_list_hides_internal_note(self):
+        regional = RefereeLicense.objects.get(name="Regional")
+        Examination.create(
+            self.user,
+            license=regional,
+            date=date(2024, 5, 1),
+            note_internal="For the committee only",
+            note_external="Well done",
+        )
+
+        response = self.client.get(reverse("examinations-user"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        exam = response.data[0]
+        self.assertNotIn("note_internal", exam)
+        self.assertNotIn("For the committee only", str(response.content))
+        self.assertEqual(exam["note_external"], "Well done")
+
+
+class TestInvitorAccess(AuthenticatedTestCase):
+    """The invitor of a competition sees the full profile of invited referees."""
+
+    def setUp(self):
+        super().setUp()
+        self.competition = make_competition(make_event(), self.user.referee)
+        self.jane = make_user("jane", email="jane@example.com")
+        self.jane.referee.iban = "CH00 0000 0000 0000 0000 0"
+        self.jane.referee.address = Address.objects.create(
+            street="Home Street", city="Thun"
+        )
+        self.jane.referee.save()
+        self.application = Application.objects.create(
+            user=self.jane.referee, competition=self.competition
+        )
+
+    def invite(self, *applications, sent=True):
+        invitation = Invitation.objects.create(
+            competition=self.competition,
+            subject="Invitation",
+            sent=timezone.now() if sent else None,
+        )
+        invitation.invited.add(*applications)
+        return invitation
+
+    def full_profile(self):
+        return self.client.get(reverse("user", args=[self.jane.pk]))
+
+    def test_invitor_sees_full_profile_of_invited(self):
+        self.invite(self.application)
+        response = self.full_profile()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["email"], "jane@example.com")
+        self.assertEqual(response.data["referee"]["iban"], "CH00 0000 0000 0000 0000 0")
+        address = reverse("address-update", args=[self.jane.referee.address_id])
+        self.assertEqual(self.client.get(address).status_code, status.HTTP_200_OK)
+
+    def test_invitor_may_not_change_profile(self):
+        self.invite(self.application)
+        for url in (f"/api/user/{self.jane.pk}/", f"/api/user/{self.jane.pk}/update/"):
+            with self.subTest(url=url):
+                response = self.client.patch(url, {"first_name": "X"}, format="json")
+                self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        address = reverse("address-update", args=[self.jane.referee.address_id])
+        response = self.client.patch(address, {"street": "X"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_applicant_not_invited(self):
+        self.assertEqual(self.full_profile().status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_draft_invitation_does_not_count(self):
+        self.invite(self.application, sent=False)
+        self.assertEqual(self.full_profile().status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_left_out_of_update(self):
+        first = self.invite(self.application)
+        update = self.invite()
+        update.previous_invitation = first
+        update.save()
+        self.assertEqual(self.full_profile().status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_other_competition_invitor(self):
+        self.invite(self.application)
+        self.client.force_authenticate(make_user("other"))
+        self.assertEqual(self.full_profile().status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_invited_referee_does_not_see_invitor(self):
+        self.invite(self.application)
+        self.client.force_authenticate(self.jane)
+        response = self.client.get(reverse("user", args=[self.user.pk]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

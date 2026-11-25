@@ -2,6 +2,7 @@ from django.contrib.auth.models import User
 from django.db import transaction
 from rest_framework import serializers
 
+from helper.serializers import AddressSerializer
 from referee.serializers import RefereeSerializer
 
 
@@ -26,6 +27,7 @@ class UserSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "username",
+            "email",
             "password",
             "referee",
             "permissions",
@@ -35,6 +37,16 @@ class UserSerializer(serializers.ModelSerializer):
             "password": {"write_only": True},
             "is_staff": {"read_only": True},
         }
+
+    def validate(self, attrs):
+        # A referee's address is personal: nothing else may use it.
+        address = attrs.get("referee", {}).get("address")
+        referee = getattr(self.instance, "referee", None)
+        if address is not None and address.is_used(except_referee=referee):
+            raise serializers.ValidationError(
+                {"referee": {"address": ["This address is used elsewhere."]}}
+            )
+        return attrs
 
     def get_permissions(self, user) -> list[str]:
         """Model permissions, e.g. "competition.add_event", for the frontend."""
@@ -68,3 +80,73 @@ class UserSerializer(serializers.ModelSerializer):
         if referee_data:
             self._update_referee(instance, referee_data)
         return instance
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    """
+    A user as other users see them. Each piece of personal information (the
+    e-mail address, phone number, mobile phone number, date of birth and
+    personal address) is null unless the user shares it; the IBAN and
+    permissions are never shown.
+    """
+
+    name = serializers.SerializerMethodField()
+    email = serializers.SerializerMethodField()
+    phone = serializers.SerializerMethodField()
+    mobile = serializers.SerializerMethodField()
+    dob = serializers.SerializerMethodField()
+    address = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "first_name",
+            "last_name",
+            "name",
+            "email",
+            "phone",
+            "mobile",
+            "dob",
+            "address",
+        ]
+        read_only_fields = fields
+
+    @staticmethod
+    def _referee(user):
+        return getattr(user, "referee", None)
+
+    def _shared(self, user, flag):
+        """The referee profile if it shares the given flag, else None."""
+        referee = self._referee(user)
+        if referee is not None and getattr(referee, flag):
+            return referee
+        return None
+
+    def get_name(self, user) -> str:
+        full = " ".join([user.first_name, user.last_name]).strip()
+        return full or user.username
+
+    def get_email(self, user) -> str | None:
+        return user.email if self._shared(user, "share_email") else None
+
+    def get_phone(self, user) -> str | None:
+        referee = self._shared(user, "share_phone")
+        return referee.phone if referee else None
+
+    def get_mobile(self, user) -> str | None:
+        referee = self._shared(user, "share_mobile")
+        return referee.mobile if referee else None
+
+    def get_dob(self, user) -> str | None:
+        referee = self._shared(user, "share_dob")
+        if referee is None or referee.dob is None:
+            return None
+        return referee.dob.isoformat()
+
+    def get_address(self, user) -> dict | None:
+        referee = self._shared(user, "share_address")
+        if referee is None or referee.address is None:
+            return None
+        return AddressSerializer(referee.address).data

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from helper.serializers import public_address
 from referee.models import Examination
 from referee.models import Referee
 from referee.models import RefereeLicense
@@ -7,6 +8,9 @@ from referee.models import RefereeRole
 
 
 class ExaminationSerializer(serializers.ModelSerializer):
+    def validate_address(self, address):
+        return public_address(address)
+
     class Meta:
         model = Examination
         fields = [
@@ -23,10 +27,44 @@ class ExaminationSerializer(serializers.ModelSerializer):
         ]
 
 
+class OwnExaminationSerializer(serializers.ModelSerializer):
+    """
+    An examination as its candidate sees it, without the internal note
+    meant for the examination committee.
+    """
+
+    class Meta:
+        model = Examination
+        fields = [
+            "id",
+            "candidate",
+            "license",
+            "chief_examiner",
+            "date",
+            "address",
+            "grade",
+            "passed",
+            "note_external",
+        ]
+        read_only_fields = fields
+
+
 class RefereeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Referee
-        fields = ["id", "address", "dob", "iban", "phone", "mobile"]
+        fields = [
+            "id",
+            "address",
+            "dob",
+            "iban",
+            "phone",
+            "mobile",
+            "share_email",
+            "share_phone",
+            "share_mobile",
+            "share_dob",
+            "share_address",
+        ]
         read_only_fields = ["id"]
 
 

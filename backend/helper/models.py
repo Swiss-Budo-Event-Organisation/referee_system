@@ -14,6 +14,12 @@ class Address(models.Model):
     Class to store a regular address
     composed of fields for street, house number, area code, city and country
     string representation gives comma separated concatenation
+
+    An address a referee points to is that referee's personal address. It
+    belongs to that referee alone: no other referee, location, accommodation
+    or examination uses it, so changing it affects nobody else. Two referees
+    living together each have their own copy. Any other address may be seen
+    by all users.
     """
 
     street = models.CharField(max_length=150, verbose_name=_("Street"))
@@ -43,6 +49,26 @@ class Address(models.Model):
             ]
         )
         return line
+
+    @property
+    def is_personal(self) -> bool:
+        """Whether a referee lives here."""
+        return self.domiciled.exists()
+
+    def is_used(self, except_referee=None) -> bool:
+        """
+        Whether a referee (other than except_referee), location,
+        accommodation or examination uses the address.
+        """
+        referees = self.domiciled.all()
+        if except_referee is not None:
+            referees = referees.exclude(pk=except_referee.pk)
+        return (
+            referees.exists()
+            or self.location_set.exists()
+            or self.accommodation_set.exists()
+            or self.exams.exists()
+        )
 
 
 class Location(models.Model):

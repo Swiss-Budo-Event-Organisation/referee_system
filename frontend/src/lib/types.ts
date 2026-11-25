@@ -86,7 +86,6 @@ export type ExamType = {
     address?: number;
     grade?: number;
     passed: boolean;
-    note_internal: string;
     note_external: string;
 }
 

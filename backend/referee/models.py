@@ -35,6 +35,13 @@ class RefereeLicense(Category):
         verbose_name_plural = _("Referee licenses")
 
 
+def delete_unused_address(pk) -> None:
+    """Delete a former personal address that nothing uses any more."""
+    address = Address.objects.filter(pk=pk).first()
+    if address is not None and not address.is_used():
+        address.delete()
+
+
 class Referee(models.Model):
     """
     Referee
@@ -43,8 +50,13 @@ class Referee(models.Model):
     Fields:
         user (User): User this profile belongs to
         license (RefereeLicense): Highest license this person currently holds
-        address (Address): Living address of the person
+        address (Address): Living address of the person, personal to them
+            (see Address); it is deleted once the referee no longer uses it
         dob (Date): Date of Birth of the person
+        share_email, share_phone, share_mobile, share_dob, share_address
+            (bool): Whether other users may see that piece of information. The
+            IBAN is never shared; only staff members and the invitors of the
+            competitions the referee is invited to may see it.
     """
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name=_("User"))
@@ -66,6 +78,31 @@ class Referee(models.Model):
     mobile = models.CharField(
         max_length=25, verbose_name=_("Mobile phone number"), default=""
     )
+    share_email = models.BooleanField(
+        default=False,
+        verbose_name=_("Share e-mail address"),
+        help_text=_("Other users may see your e-mail address."),
+    )
+    share_phone = models.BooleanField(
+        default=False,
+        verbose_name=_("Share phone number"),
+        help_text=_("Other users may see your phone number."),
+    )
+    share_mobile = models.BooleanField(
+        default=False,
+        verbose_name=_("Share mobile phone number"),
+        help_text=_("Other users may see your mobile phone number."),
+    )
+    share_dob = models.BooleanField(
+        default=False,
+        verbose_name=_("Share date of birth"),
+        help_text=_("Other users may see your date of birth."),
+    )
+    share_address = models.BooleanField(
+        default=False,
+        verbose_name=_("Share address"),
+        help_text=_("Other users may see your personal address."),
+    )
 
     class Meta:
         verbose_name = _("Referee Profile")
@@ -75,6 +112,18 @@ class Referee(models.Model):
         if not self.user.first_name and not self.user.last_name:
             return self.user.username
         return self.name
+
+    def save(self, *args, **kwargs):
+        previous = None
+        if self.pk is not None:
+            previous = (
+                Referee.objects.filter(pk=self.pk)
+                .values_list("address_id", flat=True)
+                .first()
+            )
+        super().save(*args, **kwargs)
+        if previous is not None and previous != self.address_id:
+            delete_unused_address(previous)
 
     @property
     def passed_exams(self) -> models.QuerySet:
