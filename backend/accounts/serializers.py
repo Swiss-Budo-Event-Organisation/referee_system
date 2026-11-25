@@ -6,6 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
+from accounts.models import Account
 from referee.models import Examination
 from referee.models import Referee
 
@@ -15,6 +16,25 @@ def email_taken(email: str, exclude: User | None = None) -> bool:
     if exclude is not None:
         users = users.exclude(pk=exclude.pk)
     return users.exists()
+
+
+class AccountSerializer(serializers.ModelSerializer):
+    """
+    The account state in the user's full profile: whether the e-mail address
+    is confirmed (a changed address starts unconfirmed), whether the user
+    completed the onboarding, and, for staff members, how they want to hear
+    about accounts awaiting approval.
+    """
+
+    email_confirmed = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Account
+        fields = ["onboarded", "email_confirmed", "approval_notifications"]
+        extra_kwargs = {
+            "onboarded": {"required": False},
+            "approval_notifications": {"required": False},
+        }
 
 
 class RegistrationSerializer(serializers.ModelSerializer):

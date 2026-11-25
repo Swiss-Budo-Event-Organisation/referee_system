@@ -3,6 +3,7 @@ from django.db import transaction
 from rest_framework import serializers
 
 from accounts.models import Account
+from accounts.serializers import AccountSerializer
 from accounts.serializers import email_taken
 from helper.serializers import AddressSerializer
 from referee.serializers import RefereeSerializer
@@ -10,21 +11,13 @@ from referee.serializers import RefereeSerializer
 
 class UserSerializer(serializers.ModelSerializer):
     """
-    The full profile, with the account state: whether the e-mail address is
-    confirmed (a changed address starts unconfirmed), whether the user
-    completed the onboarding, and, for staff members, how they want to hear
-    about accounts awaiting approval.
+    The full profile: the user, their referee profile and their account
+    state (see AccountSerializer).
     """
 
     referee = RefereeSerializer(many=False, read_only=False)
+    account = AccountSerializer(required=False)
     permissions = serializers.SerializerMethodField()
-    email_confirmed = serializers.SerializerMethodField()
-    onboarded = serializers.BooleanField(source="account.onboarded", required=False)
-    approval_notifications = serializers.ChoiceField(
-        source="account.approval_notifications",
-        choices=Account.Notifications.choices,
-        required=False,
-    )
 
     class Meta:
         model = User
@@ -38,9 +31,7 @@ class UserSerializer(serializers.ModelSerializer):
             "referee",
             "permissions",
             "is_staff",
-            "email_confirmed",
-            "onboarded",
-            "approval_notifications",
+            "account",
         ]
         extra_kwargs = {
             "password": {"write_only": True},
@@ -72,7 +63,13 @@ class UserSerializer(serializers.ModelSerializer):
             self.instance, "is_staff", False
         ):
             raise serializers.ValidationError(
-                {"approval_notifications": ["Only staff members get these e-mails."]}
+                {
+                    "account": {
+                        "approval_notifications": [
+                            "Only staff members get these e-mails."
+                        ]
+                    }
+                }
             )
 
     def validate(self, attrs):
@@ -85,10 +82,6 @@ class UserSerializer(serializers.ModelSerializer):
                 {"referee": {"address": ["This address is used elsewhere."]}}
             )
         return attrs
-
-    def get_email_confirmed(self, user) -> bool:
-        account = getattr(user, "account", None)
-        return account is not None and account.email_confirmed
 
     def get_permissions(self, user) -> list[str]:
         """Model permissions, e.g. "competition.add_event", for the frontend."""

@@ -304,12 +304,12 @@ class TestEmailConfirmation(APITestCase):
         self.confirm(make_token(self.user))
         self.client.force_authenticate(self.user)
         url = reverse("user", args=[self.user.pk])
-        self.assertTrue(self.client.get(url).data["email_confirmed"])
+        self.assertTrue(self.client.get(url).data["account"]["email_confirmed"])
 
         response = self.client.patch(url, {"email": "new@example.com"}, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertFalse(response.data["email_confirmed"])
+        self.assertFalse(response.data["account"]["email_confirmed"])
 
     def test_email_must_be_unused_on_change(self):
         make_user("jane", email="jane@example.com")
@@ -345,13 +345,32 @@ class TestProfileState(APITestCase):
         self.url = reverse("user", args=[self.user.pk])
 
     def test_state_in_profile(self):
-        data = self.client.get(self.url).data
-        self.assertFalse(data["onboarded"])
-        self.assertFalse(data["email_confirmed"])
-        self.assertEqual(data["approval_notifications"], "never")
+        account = self.client.get(self.url).data["account"]
+        self.assertEqual(
+            account,
+            {
+                "onboarded": False,
+                "email_confirmed": False,
+                "approval_notifications": "never",
+            },
+        )
+
+    def test_email_confirmed_is_read_only(self):
+        response = self.client.patch(
+            self.url, {"account": {"email_confirmed": True}}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["account"]["email_confirmed"])
+
+    def test_new_user_gets_account_and_referee_profile(self):
+        user = make_user("jane")
+        self.assertIsNotNone(user.account)
+        self.assertIsNotNone(user.referee)
 
     def test_onboarding_needs_name(self):
-        response = self.client.patch(self.url, {"onboarded": True}, format="json")
+        response = self.client.patch(
+            self.url, {"account": {"onboarded": True}}, format="json"
+        )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("first_name", response.data)
 
@@ -360,7 +379,7 @@ class TestProfileState(APITestCase):
             {
                 "first_name": "John",
                 "last_name": "Doe",
-                "onboarded": True,
+                "account": {"onboarded": True},
                 "referee": {"phone": "031 000 00 00", "share_phone": True},
             },
             format="json",
@@ -377,7 +396,7 @@ class TestProfileState(APITestCase):
             {
                 "first_name": "John",
                 "last_name": "Doe",
-                "onboarded": True,
+                "account": {"onboarded": True},
                 "referee": {
                     "phone": "",
                     "mobile": "",
@@ -398,15 +417,16 @@ class TestProfileState(APITestCase):
 
     def test_only_staff_subscribe(self):
         response = self.client.patch(
-            self.url, {"approval_notifications": "daily"}, format="json"
+            self.url, {"account": {"approval_notifications": "daily"}}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("approval_notifications", response.data["account"])
 
         staff = make_staff()
         self.client.force_authenticate(staff)
         response = self.client.patch(
             reverse("user", args=[staff.pk]),
-            {"approval_notifications": "weekly"},
+            {"account": {"approval_notifications": "weekly"}},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)

@@ -18,7 +18,7 @@ function NotificationSetting({ pk }: { pk: number }) {
     const profile = useProfileQuery(pk);
     const queryClient = useQueryClient();
     const mutation = useMutation({
-        mutationFn: (value: NotificationChoice) => updateUser(pk, { approval_notifications: value }),
+        mutationFn: (value: NotificationChoice) => updateUser(pk, { account: { approval_notifications: value } }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["profile", pk] });
             toast.success("Your e-mail setting was saved.");
@@ -30,7 +30,7 @@ function NotificationSetting({ pk }: { pk: number }) {
         <Form.Group className="mb-4" style={{ maxWidth: "24rem" }} controlId="approval-notifications">
             <Form.Label>E-mail me when accounts await approval</Form.Label>
             <Form.Select
-                value={profile.data.approval_notifications ?? "never"}
+                value={profile.data.account?.approval_notifications ?? "never"}
                 disabled={mutation.isPending}
                 onChange={(e) => mutation.mutate(e.target.value as NotificationChoice)}
             >

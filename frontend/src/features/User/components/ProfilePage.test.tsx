@@ -14,7 +14,7 @@ vi.mock("../../../lib/api", () => {
 
 const profile = {
   id: 9, username: "nina", first_name: "Nina", last_name: "Newbie", email: "nina@example.com",
-  is_staff: false, permissions: [], onboarded: true, email_confirmed: true, approval_notifications: "never",
+  is_staff: false, permissions: [], account: { onboarded: true, email_confirmed: true, approval_notifications: "never" },
   referee: {
     address: 12, phone: "031 000 00 00", mobile: "", dob: "1990-04-01", iban: "CH00 0000 0000 0000 0000 0",
     share_email: true, share_phone: false, share_mobile: false, share_dob: false, share_address: false,

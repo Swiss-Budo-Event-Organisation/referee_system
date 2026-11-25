@@ -13,7 +13,7 @@ function OnboardingGate({ pk, children }: { pk: number; children: ReactNode }) {
     const profile = useProfileQuery(pk);
     const location = useLocation();
     if (profile.isLoading) return <LoadingIndicator />;
-    if (profile.data?.onboarded === false && location.pathname !== "/onboarding") {
+    if (profile.data?.account?.onboarded === false && location.pathname !== "/onboarding") {
         return <Navigate to="/onboarding" replace />;
     }
     return children;

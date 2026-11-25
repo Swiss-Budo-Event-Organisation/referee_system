@@ -19,12 +19,12 @@ vi.mock("../../../lib/api", () => {
 
 const staff = {
   id: 7, username: "admin", first_name: "Ada", last_name: "Admin", email: "ada@example.com",
-  is_staff: true, permissions: [], onboarded: true, email_confirmed: true, approval_notifications: "never",
+  is_staff: true, permissions: [], account: { onboarded: true, email_confirmed: true, approval_notifications: "never" },
   referee: {},
 };
 const newcomer = {
   id: 9, username: "nina", first_name: "Nina", last_name: "Newbie", email: "nina@example.com",
-  is_staff: false, permissions: [], onboarded: false, email_confirmed: true, approval_notifications: "never",
+  is_staff: false, permissions: [], account: { onboarded: false, email_confirmed: true, approval_notifications: "never" },
   referee: { phone: "", mobile: "", dob: null, iban: "", share_email: false, share_phone: false, share_mobile: false, share_dob: false, share_address: false },
 };
 const pending = [{
@@ -134,7 +134,7 @@ describe("OnboardingForm", () => {
     expect(api.patch).toHaveBeenCalledWith("/api/user/9/", {
       first_name: "Nina",
       last_name: "Newbie",
-      onboarded: true,
+      account: { onboarded: true },
       referee: {
         phone: "", mobile: "079 000 00 00", dob: null, iban: "",
         share_email: false, share_phone: false, share_mobile: true, share_dob: false, share_address: false,
@@ -257,7 +257,7 @@ describe("PendingAccounts", () => {
 
     await user.selectOptions(await screen.findByLabelText("E-mail me when accounts await approval"), "Daily digest");
 
-    await waitFor(() => expect(api.patch).toHaveBeenCalledWith("/api/user/7/", { approval_notifications: "daily" }));
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith("/api/user/7/", { account: { approval_notifications: "daily" } }));
   });
 });
 

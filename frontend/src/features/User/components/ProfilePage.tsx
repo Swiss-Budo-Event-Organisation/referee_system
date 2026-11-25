@@ -87,7 +87,7 @@ function ProfilePage({ pk }: { pk: number }) {
     const email: SectionField = {
         name: "email", label: "E-mail address", type: "email", autoComplete: "email",
         help: "A new address needs to be confirmed again.",
-        display: (value) => <EmailStatus email={String(value ?? "")} confirmed={Boolean(data.email_confirmed)} />,
+        display: (value) => <EmailStatus email={String(value ?? "")} confirmed={Boolean(data.account?.email_confirmed)} />,
     };
     /** What every section needs to take part in editing one at a time. */
     function editable(title: string) {

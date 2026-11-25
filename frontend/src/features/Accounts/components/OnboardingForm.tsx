@@ -77,7 +77,7 @@ function OnboardingForm({ pk }: { pk: number }) {
                 if (addressId != null) await updateAddress(addressId, addressData);
                 else await createPersonalAddress(addressData);
             }
-            await updateUser(pk, { ...required, referee: refereeData, onboarded: true });
+            await updateUser(pk, { ...required, referee: refereeData, account: { onboarded: true } });
             await queryClient.invalidateQueries({ queryKey: ["profile"] });
             await queryClient.invalidateQueries({ queryKey: ["address"] });
             navigate("/events");

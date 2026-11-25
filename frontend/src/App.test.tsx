@@ -179,7 +179,7 @@ describe("App", () => {
 
   it("sends users who have not completed their profile to the onboarding", async () => {
     const profile = responses["/api/user/7"] as object;
-    responses["/api/user/7"] = { ...profile, onboarded: false, referee: {} };
+    responses["/api/user/7"] = { ...profile, account: { onboarded: false }, referee: {} };
     try {
       logIn();
       renderApp("/events/");

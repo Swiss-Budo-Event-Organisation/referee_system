@@ -17,6 +17,14 @@ export type GroupType = { id: number; name: string };
 
 export type NotificationChoice = "never" | "immediate" | "daily" | "weekly";
 
+/** The account state in the user's full profile (profile.account). */
+export type AccountStateType = {
+    onboarded: boolean;
+    email_confirmed: boolean;
+    /** Only staff members may subscribe. */
+    approval_notifications: NotificationChoice;
+};
+
 export const NOTIFICATION_CHOICES: { value: NotificationChoice; label: string }[] = [
     { value: "never", label: "Never" },
     { value: "immediate", label: "Immediately" },
