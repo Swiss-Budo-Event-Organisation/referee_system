@@ -1,5 +1,7 @@
+import { useState } from "react"
 import { Stack } from "react-bootstrap"
 import { useQueryClient } from "@tanstack/react-query"
+import { toast } from "react-toastify"
 import LoadingIndicator from "../../../components/LoadingIndicator"
 import { useAddressQuery } from "../../../hooks/useQueries"
 import { createPersonalAddress, updateAddress } from "../../../lib/requests"
@@ -48,6 +50,8 @@ function validateAddress(values: SectionValues): FieldErrors {
 function ProfilePage({ pk }: { pk: number }) {
     const queryClient = useQueryClient();
     const profileQuery = useProfileQuery(pk);
+    // The section being edited: one at a time.
+    const [editing, setEditing] = useState<string | null>(null);
     const addressId: number | undefined = profileQuery.data?.referee?.address ?? undefined;
     const addressQuery = useAddressQuery(addressId as number, addressId != null);
     if (profileQuery.isLoading || profileQuery.data == null || addressQuery.isLoading) {
@@ -85,6 +89,24 @@ function ProfilePage({ pk }: { pk: number }) {
         help: "A new address needs to be confirmed again.",
         display: (value) => <EmailStatus email={String(value ?? "")} confirmed={Boolean(data.email_confirmed)} />,
     };
+    /** What every section needs to take part in editing one at a time. */
+    function editable(title: string) {
+        return {
+            title,
+            editing: editing === title,
+            onEdit: () => {
+                if (editing !== null && editing !== title) {
+                    toast.warning(`Please save or cancel your changes to "${editing}" before editing "${title}".`,
+                        { toastId: "one-section" });
+                    return false;
+                }
+                setEditing(title);
+                return true;
+            },
+            onDone: () => setEditing(null),
+        };
+    }
+
     const contact: SectionField[] = [
         email,
         { name: "phone", label: "Phone number", type: "tel", autoComplete: "tel", md: 6 },
@@ -95,13 +117,13 @@ function ProfilePage({ pk }: { pk: number }) {
         <>
             <h2>{data.first_name} {data.last_name} ({data.username})</h2>
             <Stack gap={2}>
-                <ProfileSection title="Personal details" fields={PERSONAL}
+                <ProfileSection {...editable("Personal details")} fields={PERSONAL} defaultOpen
                     values={{ first_name: data.first_name, last_name: data.last_name, dob: referee.dob }}
                     onSave={({ first_name, last_name, dob }) => save({ first_name, last_name }, { dob: dob || null })} />
-                <ProfileSection title="Contact" fields={contact}
+                <ProfileSection {...editable("Contact")} fields={contact}
                     values={{ email: data.email, phone: referee.phone, mobile: referee.mobile }}
                     onSave={({ email, phone, mobile }) => save({ email }, { phone, mobile })} />
-                <ProfileSection title="Address" fields={ADDRESS} values={address} validate={validateAddress}
+                <ProfileSection {...editable("Address")} fields={ADDRESS} values={address} validate={validateAddress}
                     onSave={saveAddress}
                     summary={addressQuery.data != null ? (
                         <address className="mb-0">
@@ -110,9 +132,9 @@ function ProfilePage({ pk }: { pk: number }) {
                             {address.country}
                         </address>
                     ) : <span className="text-body-secondary">Not given</span>} />
-                <ProfileSection title="Bank details" fields={BANK} values={{ iban: referee.iban }}
+                <ProfileSection {...editable("Bank details")} fields={BANK} values={{ iban: referee.iban }}
                     onSave={(values) => save({}, values)} />
-                <ProfileSection title="Visible to other users" fields={SHARING}
+                <ProfileSection {...editable("Visible to other users")} fields={SHARING}
                     values={Object.fromEntries(SHARING.map(({ name }) => [name, Boolean(referee[name])]))}
                     onSave={(values) => save({}, values)}
                     footer={<p className="text-body-secondary small mt-2 mb-0">

@@ -1,6 +1,7 @@
 import { FormEvent, Fragment, ReactNode, useState } from "react";
-import { Alert, Button, Card, CardBody, CardHeader, CardTitle, Form, Row } from "react-bootstrap";
+import { Alert, Button, Form, Row } from "react-bootstrap";
 import FormField from "../../Events/components/FormField";
+import CollapsibleCard from "../../../components/CollapsibleCard";
 import LoadingIndicator from "../../../components/LoadingIndicator";
 import { FieldErrors, fieldErrors } from "../../Accounts/utils/Accounts";
 
@@ -30,6 +31,14 @@ type ProfileSectionProps = {
     /** Replaces the list of values outside the edit mode. */
     summary?: ReactNode;
     footer?: ReactNode;
+    /** Whether the section starts open; it starts collapsed by default. */
+    defaultOpen?: boolean;
+    /** Whether the section is being edited; the page edits one at a time. */
+    editing: boolean;
+    /** Asks to edit the section; false if another one is being edited. */
+    onEdit: () => boolean;
+    /** The section was saved or the editing cancelled. */
+    onDone: () => void;
 };
 
 function shown(field: SectionField, value: SectionValue): ReactNode {
@@ -39,17 +48,23 @@ function shown(field: SectionField, value: SectionValue): ReactNode {
 }
 
 /**
- * A card of profile data. The pen in its header turns it into a form to
- * edit that part of the profile.
+ * A collapsible card of profile data. The pen in its header opens it as a
+ * form to edit that part of the profile.
  */
-function ProfileSection({ title, fields, values, onSave, validate, summary, footer }: ProfileSectionProps) {
-    const [editing, setEditing] = useState(false);
+function ProfileSection({
+    title, fields, values, onSave, validate, summary, footer, defaultOpen = false, editing, onEdit, onDone,
+}: ProfileSectionProps) {
+    const [open, setOpen] = useState(defaultOpen);
     const [errors, setErrors] = useState<FieldErrors>({});
     const [saving, setSaving] = useState(false);
 
+    function edit() {
+        if (onEdit()) setOpen(true);
+    }
+
     function stopEditing() {
-        setEditing(false);
         setErrors({});
+        onDone();
     }
 
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -80,45 +95,42 @@ function ProfileSection({ title, fields, values, onSave, validate, summary, foot
     }
 
     const id = (name: string) => `profile-${name}`;
+    const pen = !editing && (
+        <Button variant="link" size="sm" className="p-0" aria-label={`Edit ${title.toLowerCase()}`}
+            title="Edit" onClick={edit}>
+            <i className="bi bi-pencil" aria-hidden="true" />
+        </Button>
+    );
     return (
-        <Card>
-            <CardHeader className="d-flex align-items-center">
-                <CardTitle className="me-auto mb-0">{title}</CardTitle>
-                {!editing && (
-                    <Button variant="link" size="sm" className="p-0" aria-label={`Edit ${title.toLowerCase()}`}
-                        title="Edit" onClick={() => setEditing(true)}>
-                        <i className="bi bi-pencil" aria-hidden="true" />
-                    </Button>
-                )}
-            </CardHeader>
-            <CardBody>
-                {editing ? (
-                    <Form onSubmit={handleSubmit} noValidate aria-label={title}>
-                        {errors.general?.map((message) => <Alert key={message} variant="danger">{message}</Alert>)}
-                        <Row>
-                            {fields.map((field) => field.type === "switch" ? (
-                                <Form.Group key={field.name} className="mb-2" controlId={id(field.name)}>
-                                    <Form.Check type="switch" name={field.name} label={field.label}
-                                        defaultChecked={Boolean(values[field.name])} disabled={saving} />
-                                </Form.Group>
-                            ) : (
-                                <FormField key={field.name} id={id(field.name)} label={field.label} md={field.md ?? 12}
-                                    errors={errors[field.name]} required={field.required} help={field.help}>
-                                    <Form.Control name={field.name} type={field.type ?? "text"}
-                                        autoComplete={field.autoComplete} defaultValue={String(values[field.name] ?? "")}
-                                        isInvalid={Boolean(errors[field.name])} disabled={saving} />
-                                </FormField>
-                            ))}
-                        </Row>
-                        {saving ? <LoadingIndicator center={false} /> : (
-                            <div className="d-flex gap-2">
-                                <Button type="submit">Save</Button>
-                                <Button variant="outline-secondary" onClick={stopEditing}>Cancel</Button>
-                            </div>
-                        )}
-                    </Form>
-                ) : (
-                    summary ?? (
+        <CollapsibleCard title={title} open={open || editing} onToggle={setOpen} actions={pen}>
+            {editing ? (
+                <Form onSubmit={handleSubmit} noValidate aria-label={title}>
+                    {errors.general?.map((message) => <Alert key={message} variant="danger">{message}</Alert>)}
+                    <Row>
+                        {fields.map((field) => field.type === "switch" ? (
+                            <Form.Group key={field.name} className="mb-2" controlId={id(field.name)}>
+                                <Form.Check type="switch" name={field.name} label={field.label}
+                                    defaultChecked={Boolean(values[field.name])} disabled={saving} />
+                            </Form.Group>
+                        ) : (
+                            <FormField key={field.name} id={id(field.name)} label={field.label} md={field.md ?? 12}
+                                errors={errors[field.name]} required={field.required} help={field.help}>
+                                <Form.Control name={field.name} type={field.type ?? "text"}
+                                    autoComplete={field.autoComplete} defaultValue={String(values[field.name] ?? "")}
+                                    isInvalid={Boolean(errors[field.name])} disabled={saving} />
+                            </FormField>
+                        ))}
+                    </Row>
+                    {saving ? <LoadingIndicator center={false} /> : (
+                        <div className="d-flex gap-2">
+                            <Button type="submit">Save</Button>
+                            <Button variant="outline-secondary" onClick={stopEditing}>Cancel</Button>
+                        </div>
+                    )}
+                </Form>
+            ) : (
+                <>
+                    {summary ?? (
                         <dl className="row mb-0">
                             {fields.map((field) => (
                                 <Fragment key={field.name}>
@@ -127,11 +139,11 @@ function ProfileSection({ title, fields, values, onSave, validate, summary, foot
                                 </Fragment>
                             ))}
                         </dl>
-                    )
-                )}
-                {!editing && footer}
-            </CardBody>
-        </Card>
+                    )}
+                    {footer}
+                </>
+            )}
+        </CollapsibleCard>
     );
 }
 

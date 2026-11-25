@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { ToastContainer } from "react-toastify";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import api, { getRequest } from "../../../lib/api";
 import ProfilePage from "./ProfilePage";
@@ -43,7 +44,7 @@ function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter><ProfilePage pk={9} /></MemoryRouter>
+      <MemoryRouter><ProfilePage pk={9} /><ToastContainer /></MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -66,6 +67,45 @@ describe("ProfilePage", () => {
     const sharing = await section("Visible to other users");
     expect(sharing.getAllByText("Yes")).toHaveLength(1);
     expect(sharing.getAllByText("No")).toHaveLength(4);
+  });
+
+  it("starts with the sections collapsed and opens them", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const toggle = await screen.findByRole("button", { name: "Bank details" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Personal details" })).toHaveAttribute("aria-expanded", "true");
+    for (const title of ["Contact", "Address", "Visible to other users", "Examinations"]) {
+      expect(screen.getByRole("button", { name: title })).toHaveAttribute("aria-expanded", "false");
+    }
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    // The pen opens a collapsed section to edit it.
+    const contact = screen.getByRole("button", { name: "Contact" });
+    await user.click(screen.getByRole("button", { name: "Edit contact" }));
+    expect(contact).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("Phone number")).toBeInTheDocument();
+  });
+
+  it("edits one section at a time", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "Edit contact" }));
+    await user.click(screen.getByRole("button", { name: "Edit bank details" }));
+
+    expect(await screen.findByText(
+      'Please save or cancel your changes to "Contact" before editing "Bank details".',
+    )).toBeInTheDocument();
+    expect(screen.queryByLabelText("IBAN")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bank details" })).toHaveAttribute("aria-expanded", "false");
+
+    // Once the contact is saved, the bank details may be edited.
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(await screen.findByRole("button", { name: "Edit bank details" }));
+    expect(await screen.findByLabelText("IBAN")).toBeInTheDocument();
   });
 
   it("edits the phone numbers", async () => {
