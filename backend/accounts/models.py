@@ -58,6 +58,7 @@ class Account(models.Model):
     class Meta:
         verbose_name = _("Account")
         verbose_name_plural = _("Accounts")
+        permissions = [("approve_account", _("Can approve accounts"))]
 
     def __str__(self) -> str:
         return str(self.user)
@@ -84,8 +85,13 @@ def pending_users():
     )
 
 
-def notified_staff(frequency):
-    """Active staff members subscribed to the given notification frequency."""
-    return User.objects.filter(
-        is_active=True, is_staff=True, account__approval_notifications=frequency
-    ).exclude(email="")
+def notified_approvers(frequency):
+    """
+    Users who may approve accounts (see accounts.permissions) and subscribed
+    to the given notification frequency.
+    """
+    from accounts.permissions import approvers
+
+    return (
+        approvers().filter(account__approval_notifications=frequency).exclude(email="")
+    )

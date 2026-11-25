@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import LoadingIndicator from "../../../components/LoadingIndicator";
 import { formatDate } from "../../../lib/helper";
-import { useIsStaff } from "../../User/hooks/useUserQueries";
+import { useCanApproveAccounts, useCanViewPendingAccounts } from "../../User/hooks/useUserQueries";
 import { usePendingAccountsQuery } from "../hooks/useAccountQueries";
 import {
     deleteAccount, fieldErrors, PendingAccountType,
@@ -14,7 +14,7 @@ import ApproveModal from "./ApproveModal";
 
 const fullName = (a: PendingAccountType) => `${a.first_name} ${a.last_name}`.trim() || a.username;
 
-function AccountRow({ account }: { account: PendingAccountType }) {
+function AccountRow({ account, canApprove }: { account: PendingAccountType; canApprove: boolean }) {
     const [approving, setApproving] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const queryClient = useQueryClient();
@@ -35,7 +35,7 @@ function AccountRow({ account }: { account: PendingAccountType }) {
             <td>{account.email}</td>
             <td>{formatDate(new Date(account.date_joined))}</td>
             <td>{formatDate(new Date(account.expires))}</td>
-            <td className="text-end text-nowrap">
+            {canApprove && <td className="text-end text-nowrap">
                 <Button size="sm" variant="success" className="me-2" onClick={() => setApproving(true)}>
                     <i className="bi bi-check-lg me-1" aria-hidden="true" /> Approve
                 </Button>
@@ -55,18 +55,19 @@ function AccountRow({ account }: { account: PendingAccountType }) {
                         <Button variant="danger" disabled={mutation.isPending} onClick={() => mutation.mutate()}>Delete</Button>
                     </Modal.Footer>
                 </Modal>
-            </td>
+            </td>}
         </tr>
     );
 }
 
 /** Registrations awaiting approval, for staff members. */
 function PendingAccounts() {
-    const isStaff = useIsStaff();
-    const accounts = usePendingAccountsQuery(isStaff === true);
+    const canView = useCanViewPendingAccounts();
+    const canApprove = useCanApproveAccounts() === true;
+    const accounts = usePendingAccountsQuery(canView === true);
 
-    if (isStaff === undefined) return <LoadingIndicator size="15rem" />;
-    if (!isStaff) return <Alert variant="warning">Only staff members may approve accounts.</Alert>;
+    if (canView === undefined) return <LoadingIndicator size="15rem" />;
+    if (!canView) return <Alert variant="warning">You may not see the accounts awaiting approval.</Alert>;
     return (
         <>
             <h1>Accounts awaiting approval</h1>
@@ -86,11 +87,11 @@ function PendingAccounts() {
                             <th>E-mail</th>
                             <th>Registered</th>
                             <th>Deleted on</th>
-                            <th><span className="visually-hidden">Actions</span></th>
+                            {canApprove && <th><span className="visually-hidden">Actions</span></th>}
                         </tr>
                     </thead>
                     <tbody>
-                        {accounts.data.map((account) => <AccountRow key={account.id} account={account} />)}
+                        {accounts.data.map((account) => <AccountRow key={account.id} account={account} canApprove={canApprove} />)}
                     </tbody>
                 </Table>
             )}

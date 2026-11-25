@@ -19,7 +19,7 @@ vi.mock("../../../lib/api", () => {
 
 const staff = {
   id: 7, username: "admin", first_name: "Ada", last_name: "Admin", email: "ada@example.com",
-  is_staff: true, permissions: [], account: { onboarded: true, email_confirmed: true, approval_notifications: "never" },
+  is_staff: true, permissions: ["accounts.approve_account"], account: { onboarded: true, email_confirmed: true, approval_notifications: "never" },
   referee: {},
 };
 const newcomer = {
@@ -206,10 +206,19 @@ describe("OnboardingForm", () => {
 describe("PendingAccounts", () => {
   beforeEach(() => localStorage.setItem(ACCESS_TOKEN, makeToken(7)));
 
-  it("refuses non-staff members", async () => {
-    localStorage.setItem(ACCESS_TOKEN, makeToken(9));
+  it("refuses users without the permission, staff or not", async () => {
+    responses["/api/user/7"] = { ...staff, permissions: [] };
     renderWith(<PendingAccounts />);
-    expect(await screen.findByText("Only staff members may approve accounts.")).toBeInTheDocument();
+    expect(await screen.findByText("You may not see the accounts awaiting approval.")).toBeInTheDocument();
+  });
+
+  it("only shows the accounts to those who may view but not approve them", async () => {
+    localStorage.setItem(ACCESS_TOKEN, makeToken(9));
+    responses["/api/user/9"] = { ...newcomer, permissions: ["accounts.view_account"] };
+    renderWith(<PendingAccounts />);
+    const row = (await screen.findByText("Paul Pending")).closest("tr") as HTMLElement;
+    expect(within(row).queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
   });
 
   it("approves an account with a group and an examination", async () => {

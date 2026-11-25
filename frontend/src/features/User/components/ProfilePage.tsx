@@ -6,7 +6,7 @@ import LoadingIndicator from "../../../components/LoadingIndicator"
 import { useAddressQuery } from "../../../hooks/useQueries"
 import { createPersonalAddress, updateAddress } from "../../../lib/requests"
 import { AddressType } from "../../../lib/types"
-import { useProfileQuery } from "../hooks/useUserQueries"
+import { canApproveAccounts, useProfileQuery } from "../hooks/useUserQueries"
 import ApplicationsList from "./ApplicationsCard"
 import ExaminationCard from "./ExaminationCard"
 import ProfileSection, { SectionField, SectionValues } from "./ProfileSection"
@@ -148,7 +148,7 @@ function ProfilePage({ pk }: { pk: number }) {
                     footer={<p className="text-body-secondary small mt-2 mb-0">
                         Your name is always visible to other users; nothing else is unless you allow it.
                     </p>} />
-                {data.is_staff && (
+                {canApproveAccounts(data) && (
                     <ProfileSection {...editable("Notifications")} fields={NOTIFICATIONS}
                         values={{ approval_notifications: data.account?.approval_notifications ?? "never" }}
                         onSave={(values) => save({ account: values })} />

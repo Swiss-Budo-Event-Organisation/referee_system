@@ -3,6 +3,7 @@ from django.db import transaction
 from rest_framework import serializers
 
 from accounts.models import Account
+from accounts.permissions import can_approve
 from accounts.serializers import AccountSerializer
 from accounts.serializers import email_taken
 from helper.serializers import AddressSerializer
@@ -59,14 +60,15 @@ class UserSerializer(serializers.ModelSerializer):
             if missing:
                 raise serializers.ValidationError(missing)
         notifications = account.get("approval_notifications")
-        if notifications not in (None, Account.Notifications.NEVER) and not getattr(
-            self.instance, "is_staff", False
-        ):
+        if notifications not in (
+            None,
+            Account.Notifications.NEVER,
+        ) and not can_approve(self.instance):
             raise serializers.ValidationError(
                 {
                     "account": {
                         "approval_notifications": [
-                            "Only staff members get these e-mails."
+                            "Only those who may approve accounts get these e-mails."
                         ]
                     }
                 }

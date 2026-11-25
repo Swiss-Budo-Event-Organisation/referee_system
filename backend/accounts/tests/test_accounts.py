@@ -3,6 +3,7 @@ from datetime import timedelta
 from unittest import mock
 
 from django.contrib.auth.models import Group
+from django.contrib.auth.models import Permission
 from django.contrib.auth.models import User
 from django.core import mail
 from django.test import TestCase
@@ -17,6 +18,7 @@ from accounts.models import pending_users
 from accounts.tasks import delete_expired_registrations
 from accounts.tasks import send_pending_digest
 from accounts.tokens import make_token
+from api.tests.helpers import grant
 from api.tests.helpers import make_user
 from referee.models import Examination
 from referee.models import RefereeLicense
@@ -37,10 +39,11 @@ def registration(**data):
 
 
 def make_staff(username="staff", notifications=Account.Notifications.NEVER):
+    """A staff member who may approve accounts."""
     user = make_user(username, email=f"{username}@example.com", is_staff=True)
     user.account.approval_notifications = notifications
     user.account.save()
-    return user
+    return grant(user, "approve_account")
 
 
 def make_pending(username="newbie", days_ago=0):
@@ -170,6 +173,46 @@ class TestPendingList(APITestCase):
             with self.subTest(url=url):
                 response = getattr(self.client, method)(url)
                 self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_staff_status_alone_is_not_enough(self):
+        self.client.force_authenticate(make_user("boss", is_staff=True))
+        response = self.client.get(reverse("pending-list"))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_approve_permission_without_staff_status(self):
+        approver = grant(make_user("approver"), "approve_account")
+        self.client.force_authenticate(approver)
+        self.assertEqual(
+            self.client.get(reverse("pending-list")).status_code, status.HTTP_200_OK
+        )
+        self.assertEqual(
+            self.client.get(reverse("group-list")).status_code, status.HTTP_200_OK
+        )
+
+    def test_view_permission_only_sees(self):
+        self.client.force_authenticate(grant(make_user("viewer"), "view_account"))
+        response = self.client.get(reverse("pending-list"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([u["username"] for u in response.data], ["newbie"])
+        for method, url in [
+            ("delete", reverse("pending-detail", args=[self.pending.pk])),
+            ("post", reverse("pending-approve", args=[self.pending.pk])),
+            ("get", reverse("group-list")),
+        ]:
+            with self.subTest(url=url):
+                response = getattr(self.client, method)(url)
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_approvers_may_not_edit_profiles(self):
+        approver = grant(make_user("approver"), "approve_account")
+        other = make_user("other", first_name="Olga")
+        self.client.force_authenticate(approver)
+        url = reverse("user", args=[other.pk])
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_404_NOT_FOUND)
+        response = self.client.patch(url, {"first_name": "X"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        other.refresh_from_db()
+        self.assertEqual(other.first_name, "Olga")
 
     def test_delete_pending_account(self):
         response = self.client.delete(reverse("pending-detail", args=[self.pending.pk]))
@@ -433,6 +476,14 @@ class TestProfileState(APITestCase):
         staff.refresh_from_db()
         self.assertEqual(staff.account.approval_notifications, "weekly")
 
+    def test_viewers_may_not_subscribe(self):
+        viewer = grant(self.user, "view_account")
+        self.client.force_authenticate(viewer)
+        response = self.client.patch(
+            self.url, {"account": {"approval_notifications": "daily"}}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 class TestScheduledTasks(TestCase):
     def test_digest(self):
@@ -448,6 +499,22 @@ class TestScheduledTasks(TestCase):
         self.assertEqual([m.to for m in mail.outbox], [["daily@example.com"]])
         self.assertIn("1 account is awaiting approval", mail.outbox[0].body)
         self.assertNotIn("Nina", mail.outbox[0].body)
+
+    def test_digest_goes_to_approvers_only(self):
+        make_pending()
+        # Staff status alone doesn't count; the approve permission does,
+        # also by a group.
+        boss = make_user("boss", email="boss@example.com", is_staff=True)
+        group = Group.objects.create(name="Approvers")
+        group.permissions.add(Permission.objects.get(codename="approve_account"))
+        member = make_user("member", email="member@example.com")
+        member.groups.add(group)
+        for user in (boss, member):
+            user.account.approval_notifications = Account.Notifications.DAILY
+            user.account.save()
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(send_pending_digest("daily"), 1)
+        self.assertEqual([m.to for m in mail.outbox], [["member@example.com"]])
 
     def test_inactive_staff_get_no_digest(self):
         member = make_staff("daily", Account.Notifications.DAILY)

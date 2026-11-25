@@ -13,6 +13,8 @@ from rest_framework.views import APIView
 
 from accounts import emails
 from accounts.models import pending_users
+from accounts.permissions import can_approve
+from accounts.permissions import can_view_pending
 from accounts.serializers import ApprovalSerializer
 from accounts.serializers import GroupSerializer
 from accounts.serializers import PendingAccountSerializer
@@ -21,12 +23,18 @@ from accounts.serializers import TokenSerializer
 from accounts.tokens import check_token
 
 
-class IsStaffMember(BasePermission):
-    message = "Only staff members may do this."
+class MayViewPendingAccounts(BasePermission):
+    message = "You may not see the accounts awaiting approval."
 
     def has_permission(self, request, view):
-        user = request.user
-        return bool(user and user.is_authenticated and user.is_staff)
+        return can_view_pending(request.user)
+
+
+class MayApproveAccounts(BasePermission):
+    message = "You may not approve accounts."
+
+    def has_permission(self, request, view):
+        return can_approve(request.user)
 
 
 class RegistrationThrottle(AnonRateThrottle):
@@ -36,9 +44,9 @@ class RegistrationThrottle(AnonRateThrottle):
 
 class RegisterView(generics.CreateAPIView):
     """
-    Register a new account. It stays inactive until a staff member approves
-    it; the user gets an e-mail saying so, and subscribed staff members are
-    told how many accounts await approval.
+    Register a new account. It stays inactive until someone who may approve
+    accounts approves it; the user gets an e-mail saying so, and subscribed
+    approvers are told how many accounts await approval.
     """
 
     serializer_class = RegistrationSerializer
@@ -60,10 +68,10 @@ class RegisterView(generics.CreateAPIView):
 
 
 class PendingAccountsView(generics.ListAPIView):
-    """Registrations awaiting approval, for staff members."""
+    """Registrations awaiting approval, for those who may see or approve them."""
 
     serializer_class = PendingAccountSerializer
-    permission_classes = [IsStaffMember]
+    permission_classes = [MayViewPendingAccounts]
 
     def get_queryset(self):
         return pending_users().select_related("account")
@@ -72,7 +80,7 @@ class PendingAccountsView(generics.ListAPIView):
 class PendingAccountDetailView(generics.DestroyAPIView):
     """Delete a registration awaiting approval."""
 
-    permission_classes = [IsStaffMember]
+    permission_classes = [MayApproveAccounts]
 
     def get_queryset(self):
         return pending_users()
@@ -85,7 +93,7 @@ class ApproveAccountView(APIView):
     their address and complete their profile.
     """
 
-    permission_classes = [IsStaffMember]
+    permission_classes = [MayApproveAccounts]
 
     @transaction.atomic
     def post(self, request, pk):
@@ -98,11 +106,11 @@ class ApproveAccountView(APIView):
 
 
 class GroupListView(generics.ListAPIView):
-    """The groups staff members may assign on approval."""
+    """The groups that may be assigned on approval."""
 
     queryset = Group.objects.order_by("name")
     serializer_class = GroupSerializer
-    permission_classes = [IsStaffMember]
+    permission_classes = [MayApproveAccounts]
 
 
 class ConfirmEmailView(APIView):

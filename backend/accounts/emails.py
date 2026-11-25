@@ -9,7 +9,7 @@ from django.db import transaction
 from django.template.loader import render_to_string
 
 from accounts.models import Account
-from accounts.models import notified_staff
+from accounts.models import notified_approvers
 from accounts.models import pending_users
 from accounts.tokens import confirmation_url
 
@@ -66,7 +66,7 @@ def notify_staff(frequency: str) -> int:
     count = pending_users().count()
     if count == 0:
         return 0
-    staff = list(notified_staff(frequency))
+    staff = list(notified_approvers(frequency))
     for member in staff:
         _queue(
             "pending_accounts",
