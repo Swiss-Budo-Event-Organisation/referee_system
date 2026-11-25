@@ -57,6 +57,27 @@ export function useIsStaff(): boolean | undefined {
     return useCurrentUser((user) => Boolean(user.is_staff));
 }
 
+export const APPROVE_ACCOUNTS = "accounts.approve_account";
+export const VIEW_ACCOUNTS = "accounts.view_account";
+
+/** Whether the user may approve accounts, which includes seeing those awaiting approval. */
+export function canApproveAccounts(user: CurrentUser): boolean {
+    return (user.permissions ?? []).includes(APPROVE_ACCOUNTS);
+}
+
+/** Whether the user may see the accounts awaiting approval. */
+export function canViewPendingAccounts(user: CurrentUser): boolean {
+    return canApproveAccounts(user) || (user.permissions ?? []).includes(VIEW_ACCOUNTS);
+}
+
+export function useCanApproveAccounts(): boolean | undefined {
+    return useCurrentUser(canApproveAccounts);
+}
+
+export function useCanViewPendingAccounts(): boolean | undefined {
+    return useCurrentUser(canViewPendingAccounts);
+}
+
 /** The invitation of one of the user's applications, loaded once it is shown. */
 export function useReceivedInvitationQuery(application: number, enabled: boolean) {
     return useQuery({

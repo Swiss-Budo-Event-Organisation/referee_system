@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 import environ
+from celery.schedules import crontab
 from django.utils.timezone import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -51,6 +52,7 @@ INSTALLED_APPS = [
     "django_celery_results",
     "django_celery_beat",
     "api",
+    "accounts",
     "referee",
     "competition",
     "helper",
@@ -117,6 +119,24 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 CELERY_BROKER_URL = env.str("CELERY_BROKER_URL", default="redis://redis:6379/0")
 CELERY_RESULT_BACKEND = "django-db"
 CELERY_RESULT_EXTENDED = True
+CELERY_TIMEZONE = "Europe/Zurich"
+# The database scheduler of django_celery_beat picks these up.
+CELERY_BEAT_SCHEDULE = {
+    "pending-accounts-daily-digest": {
+        "task": "accounts.tasks.send_pending_digest",
+        "schedule": crontab(hour=7, minute=0),
+        "args": ["daily"],
+    },
+    "pending-accounts-weekly-digest": {
+        "task": "accounts.tasks.send_pending_digest",
+        "schedule": crontab(hour=7, minute=0, day_of_week="mon"),
+        "args": ["weekly"],
+    },
+    "delete-expired-registrations": {
+        "task": "accounts.tasks.delete_expired_registrations",
+        "schedule": crontab(hour=3, minute=0),
+    },
+}
 
 
 # Password validation
@@ -200,6 +220,12 @@ MEDIA_URL = "/media/"
 # env.email() returns EMAIL_BACKEND, EMAIL_HOST, ... which are set here.
 EMAIL_CONFIG = env.email("EMAIL", default="consolemail://")
 vars().update(EMAIL_CONFIG)
+
+# Where the React app runs, for links in e-mails.
+FRONTEND_URL = env.str("FRONTEND_URL", default="http://localhost:8080").rstrip("/")
+
+# How often one address may register (see accounts.views.RegisterView).
+REGISTRATION_THROTTLE_RATE = "20/hour"
 
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWS_CREDENTIALS = True

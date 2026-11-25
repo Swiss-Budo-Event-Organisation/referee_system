@@ -1,6 +1,6 @@
 import { useState, FormEvent, useContext, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Button, Col, Form, Row } from "react-bootstrap";
+import { Alert, Button, Col, Form, Row } from "react-bootstrap";
 import { ACCESS_TOKEN, REFRESH_TOKEN } from "../../../lib/constants";
 import { UserType } from "../../../lib/types";
 import { getUser } from "../../../lib/auth";
@@ -15,6 +15,7 @@ type UserFormProps = {
 }
 function UserForm({ route, method, next = null }: UserFormProps) {
     const [isLoading, setIsLoading] = useState(false);
+    const [failed, setFailed] = useState(false);
     const navigate = useNavigate();
 
     const name = method === "login" ? "Login" : "Register";
@@ -24,6 +25,7 @@ function UserForm({ route, method, next = null }: UserFormProps) {
     const handleSubmit = useCallback(async (event: FormEvent) => {
         event.preventDefault();
         setIsLoading(true);
+        setFailed(false);
         const formData = new FormData(event.currentTarget as HTMLFormElement);
         const username = formData.get("username");
         const password = formData.get("password")
@@ -42,7 +44,8 @@ function UserForm({ route, method, next = null }: UserFormProps) {
             } else {
                 navigate("/login" + destination);
             }
-        } catch (error) {
+        } catch {
+            setFailed(true);
             setUser({ "id": undefined, "isAuthenticated": false });
         } finally {
             setIsLoading(false);
@@ -52,6 +55,11 @@ function UserForm({ route, method, next = null }: UserFormProps) {
         <div className="container">
             <h1>{name}</h1>
             <Form onSubmit={handleSubmit} className="mt-4">
+                {failed && method === "login" && (
+                    <Alert variant="danger">
+                        The username or password is wrong, or your account is still awaiting approval.
+                    </Alert>
+                )}
                 <Row>
                     <Form.Group className="mb-3" as={Col}>
                         <Form.Label className="visually-hidden" htmlFor="username">Username</Form.Label>

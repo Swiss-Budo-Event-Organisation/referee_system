@@ -2,22 +2,22 @@ from django.contrib.auth.models import User
 from django.db import transaction
 from rest_framework import serializers
 
+from accounts.models import Account
+from accounts.permissions import can_approve
+from accounts.serializers import AccountSerializer
+from accounts.serializers import email_taken
 from helper.serializers import AddressSerializer
 from referee.serializers import RefereeSerializer
 
 
-class UserCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ["id", "username", "password"]
-        extra_kwargs = {"password": {"write_only": True}}
-
-    def create(self, validated_data):
-        return User.objects.create_user(**validated_data)
-
-
 class UserSerializer(serializers.ModelSerializer):
+    """
+    The full profile: the user, their referee profile and their account
+    state (see AccountSerializer).
+    """
+
     referee = RefereeSerializer(many=False, read_only=False)
+    account = AccountSerializer(required=False)
     permissions = serializers.SerializerMethodField()
 
     class Meta:
@@ -32,13 +32,50 @@ class UserSerializer(serializers.ModelSerializer):
             "referee",
             "permissions",
             "is_staff",
+            "account",
         ]
         extra_kwargs = {
             "password": {"write_only": True},
             "is_staff": {"read_only": True},
         }
 
+    def validate_email(self, email):
+        if email and email_taken(email, exclude=self.instance):
+            raise serializers.ValidationError("This e-mail address is already in use.")
+        return email
+
+    def _value(self, attrs, field):
+        if field in attrs:
+            return attrs[field]
+        return getattr(self.instance, field, "")
+
+    def _validate_account(self, attrs):
+        account = attrs.get("account", {})
+        if account.get("onboarded"):
+            missing = {
+                field: ["This field is required."]
+                for field in ("first_name", "last_name")
+                if not str(self._value(attrs, field)).strip()
+            }
+            if missing:
+                raise serializers.ValidationError(missing)
+        notifications = account.get("approval_notifications")
+        if notifications not in (
+            None,
+            Account.Notifications.NEVER,
+        ) and not can_approve(self.instance):
+            raise serializers.ValidationError(
+                {
+                    "account": {
+                        "approval_notifications": [
+                            "Only those who may approve accounts get these e-mails."
+                        ]
+                    }
+                }
+            )
+
     def validate(self, attrs):
+        self._validate_account(attrs)
         # A referee's address is personal: nothing else may use it.
         address = attrs.get("referee", {}).get("address")
         referee = getattr(self.instance, "referee", None)
@@ -62,6 +99,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        validated_data.pop("account", None)
         referee_data = validated_data.pop("referee", None)
         user = User.objects.create_user(**validated_data)
         if referee_data:
@@ -71,6 +109,7 @@ class UserSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         referee_data = validated_data.pop("referee", None)
+        account_data = validated_data.pop("account", None)
         password = validated_data.pop("password", None)
         for field, value in validated_data.items():
             setattr(instance, field, value)
@@ -79,6 +118,11 @@ class UserSerializer(serializers.ModelSerializer):
         instance.save()
         if referee_data:
             self._update_referee(instance, referee_data)
+        if account_data:
+            account = instance.account
+            for field, value in account_data.items():
+                setattr(account, field, value)
+            account.save()
         return instance
 
 

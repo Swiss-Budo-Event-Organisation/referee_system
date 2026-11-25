@@ -1,0 +1,8 @@
+{% autoescape off %}Hello
+
+{% if count == 1 %}1 account is{% else %}{{ count }} accounts are{% endif %} awaiting approval:
+
+{{ url }}
+
+You get this e-mail because you subscribed to it. You can change this on the page above.
+{% endautoescape %}

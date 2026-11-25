@@ -74,9 +74,11 @@ class Referee(models.Model):
         null=True,
     )
     iban = models.CharField(max_length=34, verbose_name=_("IBAN"), blank=True)
-    phone = models.CharField(max_length=25, verbose_name=_("Phone number"), default="")
+    phone = models.CharField(
+        max_length=25, verbose_name=_("Phone number"), default="", blank=True
+    )
     mobile = models.CharField(
-        max_length=25, verbose_name=_("Mobile phone number"), default=""
+        max_length=25, verbose_name=_("Mobile phone number"), default="", blank=True
     )
     share_email = models.BooleanField(
         default=False,

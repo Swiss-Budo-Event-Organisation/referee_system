@@ -1,0 +1,6 @@
+{% autoescape off %}Dear {{ name }}
+
+Thank you for registering. Your account is now waiting to be approved by a staff member. We will send you an e-mail as soon as it is approved; until then you cannot log in.
+
+If you did not register, you can ignore this e-mail. Registrations that are not approved are deleted after 30 days.
+{% endautoescape %}

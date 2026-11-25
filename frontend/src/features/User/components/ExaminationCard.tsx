@@ -1,5 +1,6 @@
 import { useState } from "react"
-import { Button, Card, CardBody, CardHeader, CardText, CardTitle } from "react-bootstrap"
+import { Button, CardText } from "react-bootstrap"
+import CollapsibleCard from "../../../components/CollapsibleCard"
 import { ExamType } from "../../../lib/types"
 import { license } from "../../../lib/helper"
 import LoadingIndicator from "../../../components/LoadingIndicator"
@@ -9,21 +10,14 @@ import ExaminationModal from "./ExaminationModal"
 
 function ExaminationCard({ user }: { user: number }) {
     const examinationQuery = useExaminationQuery(user);
-    if (examinationQuery.data != null) {
-        return <Card>
-            <CardHeader>
-                <CardTitle>
-                    Examinations
-                </CardTitle>
-            </CardHeader>
-            <CardBody>
-                {examinationQuery.data.map((elem: ExamType) => {
-                    return <Examination exam={elem} key={elem.id} />
-                })}
-            </CardBody>
-        </Card>
-    }
-    return <LoadingIndicator />
+    return (
+        <CollapsibleCard title="Examinations">
+            {examinationQuery.data == null ? <LoadingIndicator center={false} /> :
+                examinationQuery.data.length === 0
+                    ? <CardText className="text-body-secondary">No examinations yet.</CardText>
+                    : examinationQuery.data.map((elem: ExamType) => <Examination exam={elem} key={elem.id} />)}
+        </CollapsibleCard>
+    );
 }
 function Examination({ exam }: { exam: ExamType }) {
     const licenseQuery = useLicenseQuery();

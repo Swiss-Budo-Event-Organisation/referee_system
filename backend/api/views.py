@@ -9,7 +9,6 @@ from rest_framework.exceptions import NotFound
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import SAFE_METHODS
-from rest_framework.permissions import AllowAny
 from rest_framework.permissions import BasePermission
 from rest_framework.permissions import DjangoModelPermissions
 from rest_framework.permissions import IsAuthenticated
@@ -17,7 +16,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.serializers import ProfileSerializer
-from api.serializers import UserCreateSerializer
 from api.serializers import UserSerializer
 from competition.invitations import current_invitation
 from competition.invitations import missing_emails
@@ -55,6 +53,7 @@ from helper.models import Address
 from helper.models import Location
 from helper.serializers import AddressSerializer
 from helper.serializers import LocationSerializer
+from helper.serializers import NewAddressSerializer
 from referee.models import Examination
 from referee.models import Referee
 from referee.models import RefereeLicense
@@ -94,12 +93,6 @@ def _keep_fixed_fields(serializer, instance, *fields):
         value = serializer.validated_data.get(field, getattr(instance, field))
         if value != getattr(instance, field):
             raise ValidationError({field: "This field cannot be changed."})
-
-
-class CreateUserView(generics.CreateAPIView):
-    queryset = User.objects.all()
-    serializer_class = UserCreateSerializer
-    permission_classes = [AllowAny]
 
 
 def is_admin(user) -> bool:
@@ -559,12 +552,50 @@ class SendCompetitionInvitationView(CompetitionInvitationView):
         return Response(data)
 
 
-class UpdateAddressView(generics.RetrieveUpdateAPIView):
+def may_manage_addresses(user, action) -> bool:
+    """Whether the user may add, change or delete public addresses."""
+    return is_admin(user) or user.has_perm(f"helper.{action}_address")
+
+
+class CreateAddressView(generics.CreateAPIView):
+    """
+    Create an address. By default it becomes the requester's personal
+    address, replacing (and so deleting) their previous one. Creating a public
+    address (personal false) for locations, accommodations and examinations
+    takes the add address permission, which category admins have.
+    """
+
+    serializer_class = NewAddressSerializer
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def perform_create(self, serializer):
+        personal = serializer.validated_data.pop("personal")
+        user = self.request.user
+        if not personal and not may_manage_addresses(user, "add"):
+            raise PermissionDenied("You may only create your personal address.")
+        address = serializer.save()
+        if personal:
+            referee = Referee.objects.select_for_update().get(user=user)
+            referee.address = address
+            referee.save()
+
+
+class AddressView(generics.RetrieveUpdateDestroyAPIView):
     """
     Addresses of locations, accommodations and examinations are open to any
     logged-in user. A referee's personal address is open to whoever may see
     that referee's full profile (see full_profile_users); other users see it
     only in the referee's profile, if the referee shares it.
+
+    The referee and staff members may change a personal address. Changing a
+    public address takes the change address permission, which category
+    admins have, or being a staff member.
+
+    Personal addresses can't be deleted here: they go with their referee, or
+    when the referee moves to another address. A public address may be
+    deleted with the delete address permission or by staff members, once
+    nothing uses it any more.
     """
 
     queryset = Address.objects.all()
@@ -574,17 +605,23 @@ class UpdateAddressView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         address = super().get_object()
         if not address.is_personal:
-            return address
+            if self.request.method in SAFE_METHODS:
+                return address
+            action = "delete" if self.request.method == "DELETE" else "change"
+            if may_manage_addresses(self.request.user, action):
+                return address
+            raise PermissionDenied(f"You may not {action} public addresses.")
         if full_profile_users(self.request).filter(referee__address=address).exists():
             return address
         # Don't reveal that the address exists.
         raise NotFound()
 
-
-class CreateAddressView(generics.CreateAPIView):
-    queryset = Address.objects.all()
-    serializer_class = AddressSerializer
-    permission_classes = [IsAuthenticated]
+    def perform_destroy(self, instance):
+        if instance.is_personal:
+            raise PermissionDenied("Personal addresses can't be deleted.")
+        if instance.is_used():
+            raise ValidationError("This address is still in use.")
+        instance.delete()
 
 
 class CreateLocationView(generics.CreateAPIView):
