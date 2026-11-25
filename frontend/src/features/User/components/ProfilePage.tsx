@@ -1,38 +1,125 @@
-import { Card, CardBody, CardHeader, CardText, CardTitle, Stack } from "react-bootstrap"
+import { Stack } from "react-bootstrap"
+import { useQueryClient } from "@tanstack/react-query"
 import LoadingIndicator from "../../../components/LoadingIndicator"
 import { useAddressQuery } from "../../../hooks/useQueries"
+import { createPersonalAddress, updateAddress } from "../../../lib/requests"
+import { AddressType } from "../../../lib/types"
 import { useProfileQuery } from "../hooks/useUserQueries"
 import ApplicationsList from "./ApplicationsCard"
 import ExaminationCard from "./ExaminationCard"
+import ProfileSection, { SectionField, SectionValues } from "./ProfileSection"
 import EmailStatus from "../../Accounts/components/EmailStatus"
+import { FieldErrors, updateUser } from "../../Accounts/utils/Accounts"
+
+const PERSONAL: SectionField[] = [
+    { name: "first_name", label: "First name", required: true, autoComplete: "given-name", md: 6 },
+    { name: "last_name", label: "Last name", required: true, autoComplete: "family-name", md: 6 },
+    { name: "dob", label: "Date of birth", type: "date", autoComplete: "bday", md: 6 },
+];
+
+const ADDRESS: SectionField[] = [
+    { name: "street", label: "Street", autoComplete: "address-line1", md: 8 },
+    { name: "house_number", label: "House number", autoComplete: "off", md: 4 },
+    { name: "area_code", label: "Postal code", autoComplete: "postal-code", md: 4 },
+    { name: "city", label: "City", autoComplete: "address-level2", md: 8 },
+    { name: "country", label: "Country", autoComplete: "country-name" },
+];
+
+const BANK: SectionField[] = [
+    { name: "iban", label: "IBAN", help: "Only staff members and the invitors of your competitions see it." },
+];
+
+const SHARING: SectionField[] = [
+    { name: "share_email", label: "My e-mail address", type: "switch" },
+    { name: "share_phone", label: "My phone number", type: "switch" },
+    { name: "share_mobile", label: "My mobile phone number", type: "switch" },
+    { name: "share_dob", label: "My date of birth", type: "switch" },
+    { name: "share_address", label: "My address", type: "switch" },
+];
+
+/** The address is optional, but once begun it needs a street and a city. */
+function validateAddress(values: SectionValues): FieldErrors {
+    if (!Object.values(values).some(Boolean)) return {};
+    return Object.fromEntries(
+        ["street", "city"].filter((name) => !values[name]).map((name) => [name, ["This field is required."]]),
+    );
+}
 
 function ProfilePage({ pk }: { pk: number }) {
+    const queryClient = useQueryClient();
     const profileQuery = useProfileQuery(pk);
-    const addressQuery = useAddressQuery(profileQuery?.data?.referee?.address, profileQuery.isFetched);
-    if (profileQuery.isLoading) return <LoadingIndicator size="15rem" />
+    const addressId: number | undefined = profileQuery.data?.referee?.address ?? undefined;
+    const addressQuery = useAddressQuery(addressId as number, addressId != null);
+    if (profileQuery.isLoading || profileQuery.data == null || addressQuery.isLoading) {
+        return <LoadingIndicator size="15rem" />
+    }
+    const data = profileQuery.data;
+    const referee = data.referee ?? {};
+    const address: Partial<AddressType> = addressQuery.data ?? {};
+
+    async function refresh() {
+        await queryClient.invalidateQueries({ queryKey: ["profile"] });
+        await queryClient.invalidateQueries({ queryKey: ["address"] });
+    }
+
+    async function save(user: object, refereeData?: object) {
+        await updateUser(pk, refereeData ? { ...user, referee: refereeData } : user);
+        await refresh();
+    }
+
+    async function saveAddress(values: SectionValues) {
+        const fields = values as AddressType;
+        if (!Object.values(values).some(Boolean)) {
+            // Removing the address deletes it.
+            if (addressId != null) await updateUser(pk, { referee: { address: null } });
+        } else if (addressId != null) {
+            await updateAddress(addressId, fields);
+        } else {
+            await createPersonalAddress(fields);
+        }
+        await refresh();
+    }
+
+    const email: SectionField = {
+        name: "email", label: "E-mail address", type: "email", autoComplete: "email",
+        help: "A new address needs to be confirmed again.",
+        display: (value) => <EmailStatus email={String(value ?? "")} confirmed={Boolean(data.email_confirmed)} />,
+    };
+    const contact: SectionField[] = [
+        email,
+        { name: "phone", label: "Phone number", type: "tel", autoComplete: "tel", md: 6 },
+        { name: "mobile", label: "Mobile phone number", type: "tel", autoComplete: "tel", md: 6 },
+    ];
+
     return (
         <>
-            <h2>{profileQuery.data.first_name} {profileQuery.data.last_name} ({profileQuery.data.username})</h2>
+            <h2>{data.first_name} {data.last_name} ({data.username})</h2>
             <Stack gap={2}>
-                <EmailStatus email={profileQuery.data.email ?? ""} confirmed={Boolean(profileQuery.data.email_confirmed)} />
-                {addressQuery.data != null &&
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>
-                                Address
-                            </CardTitle>
-                        </CardHeader>
-                        <CardBody>
-                            <CardText>
-                                {addressQuery.data.street} {addressQuery.data.house_number}<br />
-                                {addressQuery.data.area_code} {addressQuery.data.city}<br />
-                                {addressQuery.data.country}
-                            </CardText>
-                        </CardBody>
-                    </Card >
-                }
-                <ExaminationCard user={profileQuery?.data.id} />
-                <ApplicationsList user={profileQuery?.data.id} />
+                <ProfileSection title="Personal details" fields={PERSONAL}
+                    values={{ first_name: data.first_name, last_name: data.last_name, dob: referee.dob }}
+                    onSave={({ first_name, last_name, dob }) => save({ first_name, last_name }, { dob: dob || null })} />
+                <ProfileSection title="Contact" fields={contact}
+                    values={{ email: data.email, phone: referee.phone, mobile: referee.mobile }}
+                    onSave={({ email, phone, mobile }) => save({ email }, { phone, mobile })} />
+                <ProfileSection title="Address" fields={ADDRESS} values={address} validate={validateAddress}
+                    onSave={saveAddress}
+                    summary={addressQuery.data != null ? (
+                        <address className="mb-0">
+                            {address.street} {address.house_number}<br />
+                            {address.area_code} {address.city}<br />
+                            {address.country}
+                        </address>
+                    ) : <span className="text-body-secondary">Not given</span>} />
+                <ProfileSection title="Bank details" fields={BANK} values={{ iban: referee.iban }}
+                    onSave={(values) => save({}, values)} />
+                <ProfileSection title="Visible to other users" fields={SHARING}
+                    values={Object.fromEntries(SHARING.map(({ name }) => [name, Boolean(referee[name])]))}
+                    onSave={(values) => save({}, values)}
+                    footer={<p className="text-body-secondary small mt-2 mb-0">
+                        Your name is always visible to other users; nothing else is unless you allow it.
+                    </p>} />
+                <ExaminationCard user={data.id} />
+                <ApplicationsList user={data.id} />
             </Stack>
         </>
     )

@@ -342,6 +342,19 @@ class TestAddress(AuthenticatedTestCase):
         other.referee.save()
         self.assertFalse(Address.objects.filter(pk=old.pk).exists())
 
+    def test_remove_own_address(self):
+        other, _ = self.make_personal()
+        self.client.force_authenticate(other)
+        response = self.client.patch(
+            reverse("user", args=[other.pk]),
+            {"referee": {"address": None}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        other.referee.refresh_from_db()
+        self.assertIsNone(other.referee.address)
+        self.assertFalse(Address.objects.filter(street="Home Street").exists())
+
     def test_personal_address_not_for_exams_or_accommodations(self):
         other, _ = self.make_personal()
         address = other.referee.address
