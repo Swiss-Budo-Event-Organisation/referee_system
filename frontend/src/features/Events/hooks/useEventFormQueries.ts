@@ -17,8 +17,8 @@ export function useCategoriesQuery() {
     return useQuery({ queryKey: ["categories"], queryFn: (obj) => getCategories(obj.signal), ...cache });
 }
 
-export function useRefereesQuery() {
-    return useQuery({ queryKey: ["referees"], queryFn: (obj) => getReferees(obj.signal), ...cache });
+export function useRefereesQuery(enabled: boolean = true) {
+    return useQuery({ queryKey: ["referees"], queryFn: (obj) => getReferees(obj.signal), enabled, ...cache });
 }
 
 export function useEditableEventQuery(pk: number) {

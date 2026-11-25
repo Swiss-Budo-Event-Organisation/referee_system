@@ -81,7 +81,8 @@ export type ExamType = {
     candidate: number;
     license: number;
     chief_examiner?: number;
-    date?: Date;
+    /** ISO date, such as "2024-05-01". */
+    date?: string;
     address?: number;
     grade?: number;
     passed: boolean;
