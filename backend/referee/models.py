@@ -45,8 +45,10 @@ class Referee(models.Model):
         license (RefereeLicense): Highest license this person currently holds
         address (Address): Living address of the person
         dob (Date): Date of Birth of the person
-        share_email, share_phone, share_mobile, share_address (bool): Whether
-            other users may see that piece of contact information
+        share_email, share_phone, share_mobile, share_dob, share_address
+            (bool): Whether other users may see that piece of information. The
+            IBAN is never shared; only staff members and the invitors of the
+            competitions the referee is invited to may see it.
     """
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name=_("User"))
@@ -82,6 +84,11 @@ class Referee(models.Model):
         default=False,
         verbose_name=_("Share mobile phone number"),
         help_text=_("Other users may see your mobile phone number."),
+    )
+    share_dob = models.BooleanField(
+        default=False,
+        verbose_name=_("Share date of birth"),
+        help_text=_("Other users may see your date of birth."),
     )
     share_address = models.BooleanField(
         default=False,

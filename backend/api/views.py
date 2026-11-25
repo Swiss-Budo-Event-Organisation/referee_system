@@ -23,6 +23,7 @@ from competition.invitations import current_invitation
 from competition.invitations import missing_emails
 from competition.invitations import save_invitation
 from competition.invitations import send_invitation
+from competition.invitations import users_invited_by
 from competition.models import Accommodation
 from competition.models import Application
 from competition.models import Competition
@@ -105,20 +106,33 @@ def is_admin(user) -> bool:
     return user.is_staff or user.is_superuser
 
 
+def full_profile_users(request):
+    """
+    The users whose full profile, including the IBAN, the requester may see:
+    their own, any for staff members, and for reading also those invited to
+    a competition the requester invites. Only the user and staff members may
+    change it.
+    """
+    user = request.user
+    if is_admin(user):
+        return User.objects.all()
+    ids = {user.pk}
+    if request.method in SAFE_METHODS:
+        ids |= users_invited_by(user)
+    return User.objects.filter(id__in=ids)
+
+
 class DetailUserView(generics.RetrieveUpdateAPIView):
     """
-    The full, unredacted profile: users see their own, staff members any.
-    Other users see the redacted profile at profiles/<pk>/.
+    The full, unredacted profile (see full_profile_users). Other users see
+    the redacted profile at profiles/<pk>/.
     """
 
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        user = self.request.user
-        if is_admin(user):
-            return User.objects.all()
-        return User.objects.filter(id=user.id)
+        return full_profile_users(self.request)
 
 
 class UpdateUserView(generics.RetrieveUpdateAPIView):
@@ -128,10 +142,7 @@ class UpdateUserView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        user = self.request.user
-        if is_admin(user):
-            return User.objects.all()
-        return User.objects.filter(id=user.id)
+        return full_profile_users(self.request)
 
 
 class ProfileQuerysetMixin:
@@ -551,9 +562,9 @@ class SendCompetitionInvitationView(CompetitionInvitationView):
 class UpdateAddressView(generics.RetrieveUpdateAPIView):
     """
     Addresses of locations, accommodations and examinations are open to any
-    logged-in user. A personal address (one with a user) is only open to its
-    user and to staff members; other users see it only in the user's
-    profile, if the user shares it.
+    logged-in user. A personal address (one with a user) is open to whoever
+    may see that user's full profile (see full_profile_users); other users
+    see it only in the user's profile, if the user shares it.
     """
 
     queryset = Address.objects.all()
@@ -562,8 +573,9 @@ class UpdateAddressView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         address = super().get_object()
-        user = self.request.user
-        if address.user_id is None or address.user_id == user.pk or is_admin(user):
+        if address.user_id is None:
+            return address
+        if full_profile_users(self.request).filter(pk=address.user_id).exists():
             return address
         # Don't reveal that the address exists.
         raise NotFound()

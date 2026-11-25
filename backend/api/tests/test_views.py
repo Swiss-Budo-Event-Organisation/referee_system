@@ -15,6 +15,7 @@ from api.tests.helpers import make_location
 from api.tests.helpers import make_user
 from competition.models import Application
 from competition.models import Event
+from competition.models import Invitation
 from helper.models import Address
 from referee.models import Examination
 from referee.models import RefereeLicense
@@ -258,6 +259,7 @@ class TestProfiles(AuthenticatedTestCase):
         "email": "share_email",
         "phone": "share_phone",
         "mobile": "share_mobile",
+        "dob": "share_dob",
         "address": "share_address",
     }
 
@@ -284,10 +286,9 @@ class TestProfiles(AuthenticatedTestCase):
         return response.data
 
     def assert_never_private(self, data):
-        for field in ("dob", "iban", "permissions", "is_staff", "password"):
+        for field in ("iban", "permissions", "is_staff", "password"):
             self.assertNotIn(field, data)
         self.assertNotIn("CH00", str(data))
-        self.assertNotIn("1990", str(data))
 
     def test_redacted_by_default(self):
         data = self.profile(self.make_other())
@@ -301,6 +302,7 @@ class TestProfiles(AuthenticatedTestCase):
             "email": "jane@example.com",
             "phone": "031 000 00 00",
             "mobile": "079 000 00 00",
+            "dob": "1990-01-01",
         }
         for field, flag in self.FLAGS.items():
             with self.subTest(flag=flag):
@@ -351,6 +353,7 @@ class TestProfiles(AuthenticatedTestCase):
         self.assertTrue(self.user.referee.share_email)
         self.assertTrue(self.user.referee.share_mobile)
         self.assertFalse(self.user.referee.share_phone)
+        self.assertFalse(self.user.referee.share_dob)
         self.assertFalse(self.user.referee.share_address)
 
     def test_own_address_must_be_personal(self):
@@ -394,11 +397,13 @@ class TestUser(AuthenticatedTestCase):
                 "share_email",
                 "share_phone",
                 "share_mobile",
+                "share_dob",
                 "share_address",
             },
         )
         self.assertIn("email", response.data)
-        for flag in ("share_email", "share_phone", "share_mobile", "share_address"):
+        flags = ("share_email", "share_phone", "share_mobile", "share_dob")
+        for flag in (*flags, "share_address"):
             self.assertFalse(response.data["referee"][flag], flag)
         self.assertEqual(response.data["permissions"], [])
         self.assertFalse(response.data["is_staff"])
@@ -673,3 +678,76 @@ class TestExaminations(AuthenticatedTestCase):
         self.assertNotIn("note_internal", exam)
         self.assertNotIn("For the committee only", str(response.content))
         self.assertEqual(exam["note_external"], "Well done")
+
+
+class TestInvitorAccess(AuthenticatedTestCase):
+    """The invitor of a competition sees the full profile of invited referees."""
+
+    def setUp(self):
+        super().setUp()
+        self.competition = make_competition(make_event(), self.user.referee)
+        self.jane = make_user("jane", email="jane@example.com")
+        self.jane.referee.iban = "CH00 0000 0000 0000 0000 0"
+        self.jane.referee.address = Address.objects.create(
+            street="Home Street", city="Thun", user=self.jane
+        )
+        self.jane.referee.save()
+        self.application = Application.objects.create(
+            user=self.jane.referee, competition=self.competition
+        )
+
+    def invite(self, *applications, sent=True):
+        invitation = Invitation.objects.create(
+            competition=self.competition,
+            subject="Invitation",
+            sent=timezone.now() if sent else None,
+        )
+        invitation.invited.add(*applications)
+        return invitation
+
+    def full_profile(self):
+        return self.client.get(reverse("user", args=[self.jane.pk]))
+
+    def test_invitor_sees_full_profile_of_invited(self):
+        self.invite(self.application)
+        response = self.full_profile()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["email"], "jane@example.com")
+        self.assertEqual(response.data["referee"]["iban"], "CH00 0000 0000 0000 0000 0")
+        address = reverse("address-update", args=[self.jane.referee.address_id])
+        self.assertEqual(self.client.get(address).status_code, status.HTTP_200_OK)
+
+    def test_invitor_may_not_change_profile(self):
+        self.invite(self.application)
+        for url in (f"/api/user/{self.jane.pk}/", f"/api/user/{self.jane.pk}/update/"):
+            with self.subTest(url=url):
+                response = self.client.patch(url, {"first_name": "X"}, format="json")
+                self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        address = reverse("address-update", args=[self.jane.referee.address_id])
+        response = self.client.patch(address, {"street": "X"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_applicant_not_invited(self):
+        self.assertEqual(self.full_profile().status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_draft_invitation_does_not_count(self):
+        self.invite(self.application, sent=False)
+        self.assertEqual(self.full_profile().status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_left_out_of_update(self):
+        first = self.invite(self.application)
+        update = self.invite()
+        update.previous_invitation = first
+        update.save()
+        self.assertEqual(self.full_profile().status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_other_competition_invitor(self):
+        self.invite(self.application)
+        self.client.force_authenticate(make_user("other"))
+        self.assertEqual(self.full_profile().status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_invited_referee_does_not_see_invitor(self):
+        self.invite(self.application)
+        self.client.force_authenticate(self.jane)
+        response = self.client.get(reverse("user", args=[self.user.pk]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

@@ -83,9 +83,9 @@ class UserSerializer(serializers.ModelSerializer):
 
 class ProfileSerializer(serializers.ModelSerializer):
     """
-    A user as other users see them. Each piece of contact information (the
-    e-mail address, phone number, mobile phone number and personal address)
-    is null unless the user shares it; the date of birth, IBAN and
+    A user as other users see them. Each piece of personal information (the
+    e-mail address, phone number, mobile phone number, date of birth and
+    personal address) is null unless the user shares it; the IBAN and
     permissions are never shown.
     """
 
@@ -93,6 +93,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     email = serializers.SerializerMethodField()
     phone = serializers.SerializerMethodField()
     mobile = serializers.SerializerMethodField()
+    dob = serializers.SerializerMethodField()
     address = serializers.SerializerMethodField()
 
     class Meta:
@@ -106,6 +107,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "email",
             "phone",
             "mobile",
+            "dob",
             "address",
         ]
         read_only_fields = fields
@@ -135,6 +137,12 @@ class ProfileSerializer(serializers.ModelSerializer):
     def get_mobile(self, user) -> str | None:
         referee = self._shared(user, "share_mobile")
         return referee.mobile if referee else None
+
+    def get_dob(self, user) -> str | None:
+        referee = self._shared(user, "share_dob")
+        if referee is None or referee.dob is None:
+            return None
+        return referee.dob.isoformat()
 
     def get_address(self, user) -> dict | None:
         referee = self._shared(user, "share_address")

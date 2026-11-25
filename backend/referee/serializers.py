@@ -58,6 +58,7 @@ class RefereeSerializer(serializers.ModelSerializer):
             "share_email",
             "share_phone",
             "share_mobile",
+            "share_dob",
             "share_address",
         ]
         read_only_fields = ["id"]

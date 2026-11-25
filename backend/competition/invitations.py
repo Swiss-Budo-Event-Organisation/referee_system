@@ -73,6 +73,20 @@ def draft(competition: Competition) -> Invitation | None:
     )
 
 
+def users_invited_by(user: User) -> set[int]:
+    """
+    The ids of the users invited to a competition the user invites: those in
+    the invitation sent last for it. Referees left out of an update no
+    longer count as invited.
+    """
+    ids = set()
+    for competition in Competition.objects.filter(invitor__user=user):
+        invitation = latest_sent(competition)
+        if invitation is not None:
+            ids.update(invitation.invited.values_list("user__user_id", flat=True))
+    return ids
+
+
 def default_subject(competition: Competition) -> str:
     return f"Invitation: {competition.event.name} ({competition.start:%d.%m.%Y})"
 
