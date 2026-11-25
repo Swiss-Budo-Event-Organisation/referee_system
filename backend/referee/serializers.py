@@ -48,7 +48,15 @@ class OwnExaminationSerializer(serializers.ModelSerializer):
 class RefereeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Referee
-        fields = ["id", "address", "dob", "iban", "phone", "mobile"]
+        fields = [
+            "id",
+            "address",
+            "dob",
+            "iban",
+            "phone",
+            "mobile",
+            "share_contact_details",
+        ]
         read_only_fields = ["id"]
 
 

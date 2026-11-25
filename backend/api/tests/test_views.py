@@ -38,6 +38,9 @@ class TestAnonymousAccess(APITestCase):
             reverse("application-create-list"),
             reverse("examinations-user"),
             reverse("user", args=[1]),
+            reverse("profile-list"),
+            reverse("profile-detail", args=[1]),
+            reverse("address-update", args=[1]),
         ]
         for url in urls:
             with self.subTest(url=url):
@@ -207,6 +210,125 @@ class TestAddress(AuthenticatedTestCase):
         address.refresh_from_db()
         self.assertEqual(str(address), "New Street 4, Bern, ")
 
+    def make_resident(self, username="jane", share=False):
+        """A user living at a new address, sharing contact details or not."""
+        address = Address.objects.create(street="Home Street", city="Thun")
+        other = make_user(username)
+        other.referee.address = address
+        other.referee.share_contact_details = share
+        other.referee.save()
+        return other, reverse("address-update", args=[address.pk])
+
+    def test_home_address_hidden_from_others(self):
+        _, url = self.make_resident()
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_404_NOT_FOUND)
+        response = self.client.patch(url, {"street": "X"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_shared_home_address_readable_not_writable(self):
+        _, url = self.make_resident(share=True)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["street"], "Home Street")
+        response = self.client.patch(url, {"street": "X"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_own_home_address(self):
+        other, url = self.make_resident()
+        self.client.force_authenticate(other)
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_200_OK)
+        response = self.client.patch(url, {"street": "New Street"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_staff_sees_home_address(self):
+        _, url = self.make_resident()
+        self.client.force_authenticate(make_user("staff", is_staff=True))
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_200_OK)
+
+
+class TestProfiles(AuthenticatedTestCase):
+    def make_other(self, share):
+        address = Address.objects.create(
+            street="Home Street", house_number="3", city="Thun"
+        )
+        other = make_user(
+            "jane", first_name="Jane", last_name="Roe", email="jane@example.com"
+        )
+        referee = other.referee
+        referee.address = address
+        referee.phone = "031 000 00 00"
+        referee.mobile = "079 000 00 00"
+        referee.iban = "CH00 0000 0000 0000 0000 0"
+        referee.dob = date(1990, 1, 1)
+        referee.share_contact_details = share
+        referee.save()
+        return other
+
+    def assert_never_private(self, data):
+        for field in ("dob", "iban", "permissions", "is_staff", "password"):
+            self.assertNotIn(field, data)
+        self.assertNotIn("CH00", str(data))
+        self.assertNotIn("1990", str(data))
+
+    def test_redacted_without_consent(self):
+        other = self.make_other(share=False)
+
+        response = self.client.get(reverse("profile-detail", args=[other.pk]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertEqual(data["name"], "Jane Roe")
+        self.assertFalse(data["shares_contact_details"])
+        for field in ("email", "phone", "mobile", "address"):
+            self.assertIsNone(data[field], field)
+        self.assert_never_private(data)
+
+    def test_contact_details_with_consent(self):
+        other = self.make_other(share=True)
+
+        response = self.client.get(reverse("profile-detail", args=[other.pk]))
+
+        data = response.data
+        self.assertTrue(data["shares_contact_details"])
+        self.assertEqual(data["email"], "jane@example.com")
+        self.assertEqual(data["phone"], "031 000 00 00")
+        self.assertEqual(data["mobile"], "079 000 00 00")
+        self.assertEqual(data["address"]["street"], "Home Street")
+        self.assert_never_private(data)
+
+    def test_list_profiles(self):
+        self.make_other(share=False)
+        make_user("inactive", is_active=False)
+
+        response = self.client.get(reverse("profile-list"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(sorted(p["username"] for p in response.data), ["jane", "john"])
+        for profile in response.data:
+            self.assertIsNone(profile["email"])
+            self.assert_never_private(profile)
+
+    def test_full_profile_only_for_owner_and_staff(self):
+        other = self.make_other(share=True)
+        url = reverse("user", args=[other.pk])
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_404_NOT_FOUND)
+
+        self.client.force_authenticate(make_user("staff", is_staff=True))
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["email"], "jane@example.com")
+        self.assertEqual(response.data["referee"]["iban"], "CH00 0000 0000 0000 0000 0")
+
+    def test_owner_sets_consent(self):
+        response = self.client.patch(
+            reverse("user", args=[self.user.pk]),
+            {"referee": {"share_contact_details": True}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.user.referee.refresh_from_db()
+        self.assertTrue(self.user.referee.share_contact_details)
+
 
 class TestUser(AuthenticatedTestCase):
     def test_own_user_detail(self):
@@ -219,8 +341,18 @@ class TestUser(AuthenticatedTestCase):
         self.assertEqual(response.data["referee"]["id"], self.user.referee.pk)
         self.assertEqual(
             set(response.data["referee"]),
-            {"id", "address", "dob", "iban", "phone", "mobile"},
+            {
+                "id",
+                "address",
+                "dob",
+                "iban",
+                "phone",
+                "mobile",
+                "share_contact_details",
+            },
         )
+        self.assertIn("email", response.data)
+        self.assertFalse(response.data["referee"]["share_contact_details"])
         self.assertEqual(response.data["permissions"], [])
         self.assertFalse(response.data["is_staff"])
 

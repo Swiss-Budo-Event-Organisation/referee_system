@@ -45,6 +45,8 @@ class Referee(models.Model):
         license (RefereeLicense): Highest license this person currently holds
         address (Address): Living address of the person
         dob (Date): Date of Birth of the person
+        share_contact_details (bool): Whether other users may see the e-mail
+            address, phone numbers and address
     """
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name=_("User"))
@@ -65,6 +67,11 @@ class Referee(models.Model):
     phone = models.CharField(max_length=25, verbose_name=_("Phone number"), default="")
     mobile = models.CharField(
         max_length=25, verbose_name=_("Mobile phone number"), default=""
+    )
+    share_contact_details = models.BooleanField(
+        default=False,
+        verbose_name=_("Share contact details"),
+        help_text=_("Other users may see your e-mail, phone numbers and address."),
     )
 
     class Meta:

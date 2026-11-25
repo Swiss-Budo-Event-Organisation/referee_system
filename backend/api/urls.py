@@ -15,6 +15,7 @@ from api.views import DetailEventView
 from api.views import DetailLicenseView
 from api.views import DetailLocationView
 from api.views import DetailOwnApplicationView
+from api.views import DetailProfileView
 from api.views import DetailUserView
 from api.views import EditEventWithCompetitionsView
 from api.views import EventApplicationDetailView
@@ -25,6 +26,7 @@ from api.views import ListExaminationsView
 from api.views import ListFurtureEventsView
 from api.views import ListLicenseView
 from api.views import ListLocationsView
+from api.views import ListProfilesView
 from api.views import ListRefereesView
 from api.views import ManageApplicationView
 from api.views import OwnApplicationInvitationView
@@ -36,6 +38,8 @@ urlpatterns = [
     path("user/register/", CreateUserView.as_view(), name="user-register"),
     path("user/<int:pk>/", DetailUserView.as_view(), name="user"),
     path("user/<int:pk>/update/", UpdateUserView.as_view(), name="user"),
+    path("profiles/", ListProfilesView.as_view(), name="profile-list"),
+    path("profiles/<int:pk>/", DetailProfileView.as_view(), name="profile-detail"),
     path("token/", TokenObtainPairView.as_view(), name="token-get"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("auth/", include("rest_framework.urls", namespace="rest_framework")),

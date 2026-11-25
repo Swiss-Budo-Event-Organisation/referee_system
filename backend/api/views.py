@@ -16,6 +16,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from api.serializers import ProfileSerializer
 from api.serializers import UserCreateSerializer
 from api.serializers import UserSerializer
 from competition.invitations import current_invitation
@@ -100,12 +101,23 @@ class CreateUserView(generics.CreateAPIView):
     permission_classes = [AllowAny]
 
 
+def is_admin(user) -> bool:
+    return user.is_staff or user.is_superuser
+
+
 class DetailUserView(generics.RetrieveUpdateAPIView):
+    """
+    The full, unredacted profile: users see their own, staff members any.
+    Other users see the redacted profile at profiles/<pk>/.
+    """
+
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
+        if is_admin(user):
+            return User.objects.all()
         return User.objects.filter(id=user.id)
 
 
@@ -117,9 +129,31 @@ class UpdateUserView(generics.RetrieveUpdateAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_staff or user.is_superuser:
+        if is_admin(user):
             return User.objects.all()
         return User.objects.filter(id=user.id)
+
+
+class ProfileQuerysetMixin:
+    queryset = (
+        User.objects.filter(is_active=True)
+        .select_related("referee", "referee__address")
+        .order_by("last_name", "first_name", "username")
+    )
+    serializer_class = ProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class ListProfilesView(ProfileQuerysetMixin, generics.ListAPIView):
+    """
+    The redacted profiles of all active users, for any logged-in user.
+    """
+
+
+class DetailProfileView(ProfileQuerysetMixin, generics.RetrieveAPIView):
+    """
+    The redacted profile of one user (by user id), for any logged-in user.
+    """
 
 
 class CreateEventView(generics.CreateAPIView):
@@ -515,9 +549,32 @@ class SendCompetitionInvitationView(CompetitionInvitationView):
 
 
 class UpdateAddressView(generics.RetrieveUpdateAPIView):
+    """
+    Addresses of locations and examinations are open to any logged-in user.
+    A referee's home address is only shown to the referee, to staff members
+    and, if the referee shares their contact details, to other users; only
+    the referee and staff members may change it.
+    """
+
     queryset = Address.objects.all()
     serializer_class = AddressSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        address = super().get_object()
+        residents = Referee.objects.filter(address=address)
+        if not residents.exists():
+            return address
+        user = self.request.user
+        if is_admin(user) or residents.filter(user=user).exists():
+            return address
+        if (
+            self.request.method in SAFE_METHODS
+            and residents.filter(share_contact_details=True).exists()
+        ):
+            return address
+        # Don't reveal that the address exists.
+        raise NotFound()
 
 
 class CreateAddressView(generics.CreateAPIView):
