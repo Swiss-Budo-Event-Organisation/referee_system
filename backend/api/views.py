@@ -8,6 +8,7 @@ from rest_framework.exceptions import MethodNotAllowed
 from rest_framework.exceptions import NotFound
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import SAFE_METHODS
 from rest_framework.permissions import BasePermission
 from rest_framework.permissions import DjangoModelPermissions
@@ -17,6 +18,7 @@ from rest_framework.views import APIView
 
 from api.serializers import ProfileSerializer
 from api.serializers import UserSerializer
+from competition.application_search import search_applications
 from competition.invitations import current_invitation
 from competition.invitations import missing_emails
 from competition.invitations import save_invitation
@@ -380,13 +382,33 @@ class CreateAccommodationView(generics.CreateAPIView):
     permission_classes = [DjangoModelPermissions]
 
 
+class OwnApplicationPagination(PageNumberPagination):
+    """Pages of a referee's applications, so that long histories load in parts."""
+
+    page_size = 20
+
+
 class CreateListApplicationView(generics.ListCreateAPIView):
+    """
+    The referee's own applications, the latest competition first and in
+    pages (`?page=2`), and applying for a competition. The list may be
+    narrowed down as described in `search_applications`.
+    """
+
     serializer_class = OwnApplicationSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = OwnApplicationPagination
 
     def get_queryset(self):
         user = self.request.user.referee
-        return Application.objects.filter(user=user)
+        return (
+            Application.objects.filter(user=user)
+            .select_related("competition__event__location")
+            .order_by("-competition__start", "-pk")
+        )
+
+    def filter_queryset(self, queryset):
+        return search_applications(queryset, self.request.query_params)
 
     def perform_create(self, serializer):
         if serializer.is_valid():

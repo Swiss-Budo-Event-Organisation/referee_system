@@ -1,3 +1,15 @@
+/** The statuses of Application.Status in the backend, furthest along first. */
+export const APPLICATION_STATUSES: { value: number; label: string }[] = [
+    { value: 3, label: "Participated" },
+    { value: 2, label: "Invited" },
+    { value: 1, label: "Selected" },
+    { value: 0, label: "Applied" },
+    { value: -1, label: "Not selected" },
+    { value: -2, label: "Cancelled" },
+    { value: -3, label: "Declined" },
+    { value: -4, label: "No Show" },
+];
+
 export function applicationStatusClass(status: number) {
     switch (status) {
         case -4: // No Show

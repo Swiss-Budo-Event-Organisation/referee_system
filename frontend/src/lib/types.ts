@@ -67,6 +67,22 @@ export type ApplicationType = {
     role?: number;
     /** Whether the invitation sent last invites this application. */
     has_invitation?: boolean;
+    /** The competition applied for, in the user's own applications. */
+    competition_overview?: CompetitionOverviewType;
+}
+
+/** A competition with its event, as listed with the user's own applications. */
+export type CompetitionOverviewType = {
+    id: number;
+    start: string;
+    info: string;
+    event: {
+        id: number;
+        name: string;
+        location: LocationType;
+        start: string;
+        end: string | null;
+    };
 }
 
 export type UserType = {

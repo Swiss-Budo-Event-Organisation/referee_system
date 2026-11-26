@@ -71,13 +71,20 @@ class OwnApplicationSerializer(ApplicationSerializer):
     """
     Application as seen by the applying referee: status and role are set by
     the competition admins only. `has_invitation` tells whether the referee
-    may read the invitation sent last.
+    may read the invitation sent last. `competition_overview` describes the
+    competition, so that the referee's list can be filtered without loading
+    each competition on its own.
     """
 
     has_invitation = serializers.SerializerMethodField()
+    competition_overview = serializers.SerializerMethodField()
 
     class Meta(ApplicationSerializer.Meta):
-        fields = [*ApplicationSerializer.Meta.fields, "has_invitation"]
+        fields = [
+            *ApplicationSerializer.Meta.fields,
+            "has_invitation",
+            "competition_overview",
+        ]
         read_only_fields = [
             *ApplicationSerializer.Meta.read_only_fields,
             "status",
@@ -86,6 +93,9 @@ class OwnApplicationSerializer(ApplicationSerializer):
 
     def get_has_invitation(self, application) -> bool:
         return current_invitation(application) is not None
+
+    def get_competition_overview(self, application) -> dict:
+        return CompetitionOverviewSerializer(application.competition).data
 
 
 class EventApplicationSerializer(ApplicationSerializer):
