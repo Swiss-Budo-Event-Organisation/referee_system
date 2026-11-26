@@ -366,7 +366,7 @@ class TestReadOwnInvitation(InvitationTestCase):
     def own(self, referee):
         self.client.force_authenticate(referee.user)
         response = self.client.get(reverse("application-create-list"))
-        return {a["id"]: a for a in response.data}
+        return {a["id"]: a for a in response.data["results"]}
 
     def read(self, referee):
         self.client.force_authenticate(referee.user)
@@ -399,6 +399,15 @@ class TestReadOwnInvitation(InvitationTestCase):
         # Further recipients stay private.
         self.assertNotIn("office@example.ch", str(data))
         self.assertNotIn("copy_users", data)
+
+    def test_lists_the_competition_with_the_application(self):
+        overview = self.own(self.anna)[self.applied[self.anna.pk].pk][
+            "competition_overview"
+        ]
+        self.assertEqual(overview["id"], self.competition.pk)
+        self.assertEqual(overview["event"]["name"], "Swiss Open")
+        self.assertIn("name", overview["event"]["location"])
+        self.assertIn("start", overview)
 
     def test_not_for_those_not_invited(self):
         self.send(self.anna, head_referee=self.anna)

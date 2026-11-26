@@ -1,4 +1,6 @@
+from datetime import UTC
 from datetime import date
+from datetime import datetime
 from datetime import timedelta
 
 from django.contrib.auth.models import Group
@@ -20,6 +22,7 @@ from competition.models import Event
 from competition.models import Invitation
 from competition.serializers import AccommodationSerializer
 from helper.models import Address
+from helper.models import Location
 from helper.serializers import LocationSerializer
 from referee.models import Examination
 from referee.models import RefereeLicense
@@ -772,8 +775,152 @@ class TestApplications(AuthenticatedTestCase):
         response = self.client.get(reverse("application-create-list"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["user"], self.user.referee.pk)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["user"], self.user.referee.pk)
+
+    def test_list_the_latest_competitions_first_in_pages(self):
+        first = self.competition.start
+        applications = []
+        for days in range(25):
+            competition = make_competition(
+                make_event(f"Event {days}", start=first + timedelta(days=days)),
+                self.user.referee,
+            )
+            applications.append(
+                Application.objects.create(
+                    user=self.user.referee, competition=competition
+                )
+            )
+        latest_first = [a.pk for a in reversed(applications)]
+
+        response = self.client.get(reverse("application-create-list"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 25)
+        self.assertEqual([a["id"] for a in response.data["results"]], latest_first[:20])
+        self.assertIsNotNone(response.data["next"])
+
+        response = self.client.get(reverse("application-create-list"), {"page": 2})
+        self.assertEqual([a["id"] for a in response.data["results"]], latest_first[20:])
+        self.assertIsNone(response.data["next"])
+
+
+class TestApplicationSearch(AuthenticatedTestCase):
+    def setUp(self):
+        super().setUp()
+        lausanne = Location.objects.create(
+            name="Salle Omnisport",
+            description="Next to the lake",
+            address=Address.objects.create(
+                street="Rue du Lac", area_code="1007", city="Lausanne"
+            ),
+        )
+        self.old = self.apply(
+            "Swiss Open",
+            datetime(2015, 3, 1, 9, tzinfo=UTC),
+            status=Application.Status.PARTICIPATED,
+            info="Kata and kumite",
+        )
+        self.lake = self.apply(
+            "Lake Cup",
+            datetime(2018, 6, 1, 9, tzinfo=UTC),
+            location=lausanne,
+            status=Application.Status.DECLINED,
+            accommodation_remark="Arriving by train",
+        )
+        self.recent = self.apply(
+            "Swiss Open",
+            datetime(2024, 3, 1, 9, tzinfo=UTC),
+            status=Application.Status.INVITED,
+        )
+        # Applications of others are never found.
+        Application.objects.create(
+            user=make_user("jane").referee, competition=self.old.competition
+        )
+
+    def apply(self, name, start, location=None, info="", **kwargs):
+        event = make_event(name, start=start, location=location)
+        competition = make_competition(event, self.user.referee, info=info)
+        return Application.objects.create(
+            user=self.user.referee, competition=competition, **kwargs
+        )
+
+    def found(self, **params):
+        response = self.client.get(reverse("application-create-list"), params)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        return [a["id"] for a in response.data["results"]]
+
+    def test_without_criteria_finds_all(self):
+        self.assertEqual(self.found(), [self.recent.pk, self.lake.pk, self.old.pk])
+
+    def test_between_dates_including_them(self):
+        self.assertEqual(
+            self.found(start_after="2015-03-01", start_before="2018-06-01"),
+            [self.lake.pk, self.old.pk],
+        )
+        self.assertEqual(
+            self.found(start_after="2015-03-02"), [self.recent.pk, self.lake.pk]
+        )
+        self.assertEqual(self.found(start_before="2015-12-31"), [self.old.pk])
+
+    def test_at_a_location_by_any_of_its_fields(self):
+        for term in ["omnisport", "LAKE", "rue du lac", "1007 lausanne"]:
+            with self.subTest(term=term):
+                self.assertEqual(self.found(location=term), [self.lake.pk])
+        self.assertEqual(self.found(location="Bern"), [self.recent.pk, self.old.pk])
+        self.assertEqual(self.found(location="Geneva"), [])
+
+    def test_with_one_of_several_statuses(self):
+        response = self.client.get(
+            reverse("application-create-list"),
+            {"status": [Application.Status.DECLINED, Application.Status.INVITED]},
+        )
+        self.assertEqual(
+            [a["id"] for a in response.data["results"]],
+            [self.recent.pk, self.lake.pk],
+        )
+
+    def test_free_text_anywhere(self):
+        cases = {
+            "swiss open": [self.recent.pk, self.old.pk],
+            "kumite": [self.old.pk],
+            "train": [self.lake.pk],
+            "lausanne": [self.lake.pk],
+            "national": [self.recent.pk, self.lake.pk, self.old.pk],
+            "swiss lake": [],
+        }
+        for term, expected in cases.items():
+            with self.subTest(term=term):
+                self.assertEqual(self.found(search=term), expected)
+
+    def test_all_criteria_together(self):
+        self.assertEqual(
+            self.found(
+                start_after="2010-01-01",
+                start_before="2020-01-01",
+                location="bern",
+                status=Application.Status.PARTICIPATED,
+                search="swiss",
+            ),
+            [self.old.pk],
+        )
+        self.assertEqual(self.found(start_after="2020-01-01", search="kumite"), [])
+
+    def test_rejects_invalid_criteria(self):
+        url = reverse("application-create-list")
+        cases = [
+            ({"start_after": "yesterday"}, "start_after"),
+            (
+                {"start_after": "2020-01-01", "start_before": "2019-01-01"},
+                "start_before",
+            ),
+            ({"status": "7"}, "status"),
+            ({"status": "invited"}, "status"),
+        ]
+        for params, field in cases:
+            with self.subTest(params=params):
+                response = self.client.get(url, params)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertIn(field, response.data)
 
 
 class TestExaminations(AuthenticatedTestCase):

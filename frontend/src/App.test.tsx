@@ -83,7 +83,7 @@ const responses: Record<string, unknown> = {
     permissions: ["competition.add_event"],
   },
   "/api/examinations/user/": [{ id: 1, candidate: 7, license: 1, passed: true, date: "2024-05-01", note_external: "" }],
-  "/api/applications/": [],
+  "/api/applications/": { count: 0, next: null, previous: null, results: [] },
   "/api/locations/": [location],
   "/api/categories/": [
     { id: 1, name: "National", parent: null },
@@ -825,12 +825,16 @@ describe("App", () => {
   it("shows the invitation of invited applications in a read-only window", async () => {
     const previous = { ...responses };
     const application = { id: 20, user: 7, created: "2030-10-01T10:00", modified: "2030-10-01T10:00", status: 2 };
-    responses["/api/applications/"] = [
-      { ...application, competition: 3, has_invitation: true },
-      { ...application, id: 21, competition: 4, status: 0, has_invitation: false },
-    ];
-    responses["/api/competition/3"] = { id: 3, event: { ...events[0] }, start: "2030-12-01T09:00", info: "Seniors" };
-    responses["/api/competition/4"] = { id: 4, event: { ...events[1] }, start: "2030-11-01T09:00", info: "Juniors" };
+    responses["/api/applications/"] = { count: 2, next: null, previous: null, results: [
+      {
+        ...application, competition: 3, has_invitation: true,
+        competition_overview: { id: 3, event: { ...events[0] }, start: "2030-12-01T09:00", info: "Seniors" },
+      },
+      {
+        ...application, id: 21, competition: 4, status: 0, has_invitation: false,
+        competition_overview: { id: 4, event: { ...events[1] }, start: "2030-11-01T09:00", info: "Juniors" },
+      },
+    ] };
     responses["/api/applications/20/invitation/"] = {
       subject: "Invitation Swiss Open", message: "Line one\nLine two", sent: "2030-11-01T10:00:00+01:00",
       sender: "Ina Vitor", is_update: true, event_name: "Swiss Open", location: "Dojo Bern",

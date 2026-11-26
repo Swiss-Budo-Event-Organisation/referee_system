@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { getUser } from "../../../lib/auth";
-import { getApplications, getExaminations, getProfile, getReceivedInvitation } from "../utils/User";
+import { getApplications, getExaminations, getProfile, getReceivedInvitation, HistoricSearchType } from "../utils/User";
 
 export function useProfileQuery(pk: number) {
     return useQuery({
@@ -10,10 +10,20 @@ export function useProfileQuery(pk: number) {
         staleTime: 1000 * 60 * 10,
     })
 }
-export function useApplicationQuery(user: number) {
-    return useQuery({
-        queryKey: ['registrations', 'user', user],
-        queryFn: (obj) => getApplications(obj.signal),
+/**
+ * The user's own applications, loaded a page at a time, the latest
+ * competition first. With criteria, those the server finds for them, and
+ * nothing is loaded while they are null.
+ */
+export function useApplicationQuery(user: number, criteria?: HistoricSearchType | null) {
+    return useInfiniteQuery({
+        queryKey: criteria === undefined ? ['registrations', 'user', user] : ['registrations', 'user', user, criteria],
+        queryFn: (obj) => getApplications(obj.pageParam, obj.signal, criteria ?? undefined),
+        enabled: criteria !== null,
+        // Invalid criteria are not retried.
+        retry: criteria ? false : 3,
+        initialPageParam: 1,
+        getNextPageParam: (last, pages) => last.next ? pages.length + 1 : undefined,
         gcTime: 1000 * 60 * 10,
         staleTime: 1000 * 60 * 2,
     })
