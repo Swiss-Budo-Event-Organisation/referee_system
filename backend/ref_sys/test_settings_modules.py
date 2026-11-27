@@ -7,10 +7,25 @@ import os
 import subprocess
 import sys
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from django.conf import settings
 from django.test import SimpleTestCase
 
+
+def pem_one_line() -> str:
+    r"""A fresh RSA key as .env.prod holds it: line breaks written as \n."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+    return pem.strip().replace("\n", "\\n")
+
+
 PRODUCTION_ENV = {
+    "JWT_PRIVATE_KEY": pem_one_line(),
     "DJANGO_SETTINGS_MODULE": "ref_sys.settings.production",
     "SECRET_KEY": "x7Qp2LmZ9vR4tY8wK3nB6cF1hJ5dG0sA-uE_iO2pL9kM4nB7vC3xZ",
     "DOMAIN": "referee.example.ch",
@@ -87,6 +102,24 @@ class TestProductionSettings(SimpleTestCase):
         result = run_manage("check", **{**PRODUCTION_ENV, "SECRET_KEY": ""})
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("SECRET_KEY must be set in .env.prod", result.stderr)
+
+    def test_missing_jwt_key_fails(self):
+        result = run_manage("check", **{**PRODUCTION_ENV, "JWT_PRIVATE_KEY": ""})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("JWT_PRIVATE_KEY must be set in .env.prod", result.stderr)
+
+    def test_tokens_are_signed_with_rs256(self):
+        result = run_manage(
+            "shell",
+            "-c",
+            "from allauth.headless.tokens.strategies.jwt import internal as i; "
+            "c = i._get_jwt_config(); "
+            "print(c.algorithm, c.jwk_dict['kty'], "
+            "settings.HEADLESS_SERVE_SPECIFICATION)",
+            **PRODUCTION_ENV,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip().splitlines()[-1], "RS256 RSA False")
 
 
 class TestLocalSettings(SimpleTestCase):

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import environ
 from celery.schedules import crontab
-from django.utils.timezone import timedelta
+from corsheaders.defaults import default_headers
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 # settings/base.py -> settings/ -> ref_sys/ -> backend/
@@ -22,8 +22,9 @@ DEBUG = env.bool("DEBUG", default=False)
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default="127.0.0.1")
 
 REST_FRAMEWORK = {
+    # The access tokens django-allauth hands out after login (see below).
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "allauth.headless.contrib.rest_framework.authentication.JWTTokenAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
 }
@@ -33,12 +34,53 @@ AUTHENTICATION_BACKENDS = [
     # Permissions on events and competitions from the groups of their
     # categories.
     "competition.backends.CategoryPermissionBackend",
+    "allauth.account.auth_backends.AuthenticationBackend",
 ]
 
-SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
-}
+# Authentication with django-allauth
+# ------------------------------------------------------------------------------
+# Headless only: the React app talks to the "app" client under
+# /_allauth/app/v1/. It logs in with X-Session-Token and gets a pair of JWTs
+# once the user is fully authenticated, i.e. after the second factor.
+# https://docs.allauth.org/en/latest/headless/
+
+# Users sign in with their username. Registration and e-mail confirmation
+# stay in the accounts app (approval by staff), so allauth's signup is off
+# (accounts.adapter.AccountAdapter) and it does not verify addresses.
+ACCOUNT_LOGIN_METHODS = {"username"}
+ACCOUNT_SIGNUP_FIELDS = ["username*", "email", "password1*", "password2*"]
+ACCOUNT_EMAIL_VERIFICATION = "none"
+ACCOUNT_ADAPTER = "accounts.adapter.AccountAdapter"
+ACCOUNT_LOGOUT_ON_PASSWORD_CHANGE = False
+# allauth's built-in rate limits (login, failed logins, MFA codes) stay on.
+
+HEADLESS_ONLY = True
+HEADLESS_CLIENTS = ("app",)
+# The OpenAPI specification of every endpoint at /_allauth/openapi.html.
+HEADLESS_SERVE_SPECIFICATION = DEBUG
+
+HEADLESS_TOKEN_STRATEGY = "allauth.headless.tokens.strategies.jwt.JWTTokenStrategy"
+# RS256 with a PEM private key from the environment. Without one, HS256
+# signs with SECRET_KEY, which is fine for development and tests only;
+# production requires the key. In .env files the line breaks of the PEM
+# may be written as \n.
+JWT_PRIVATE_KEY = env.str("JWT_PRIVATE_KEY", default="").replace("\\n", "\n")
+HEADLESS_JWT_ALGORITHM = "RS256" if JWT_PRIVATE_KEY else "HS256"
+HEADLESS_JWT_PRIVATE_KEY = JWT_PRIVATE_KEY
+HEADLESS_JWT_ACCESS_TOKEN_EXPIRES_IN = 5 * 60
+HEADLESS_JWT_REFRESH_TOKEN_EXPIRES_IN = 24 * 60 * 60
+# Tokens are checked against the server-side session, so logging out
+# revokes them at once.
+HEADLESS_JWT_STATEFUL_VALIDATION_ENABLED = True
+
+# Second factors: authenticator apps, passkeys and security keys, recovery
+# codes. All are optional for now.
+MFA_SUPPORTED_TYPES = ["totp", "webauthn", "recovery_codes"]
+MFA_PASSKEY_LOGIN_ENABLED = True
+MFA_TOTP_ISSUER = "Referee System"
+# allauth only lets users with a verified address add a factor. Addresses
+# are confirmed by the accounts app instead, which allauth does not know of.
+MFA_ALLOW_UNVERIFIED_EMAIL = True
 
 # Application definition
 
@@ -58,6 +100,11 @@ INSTALLED_APPS = [
     "helper",
     "rest_framework",
     "corsheaders",
+    "allauth",
+    "allauth.account",
+    "allauth.mfa",
+    "allauth.headless",
+    # Without allauth.socialaccount: no login with other providers.
 ]
 
 MIDDLEWARE = [
@@ -69,6 +116,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
 ]
 
 ROOT_URLCONF = "ref_sys.urls"
@@ -229,3 +277,5 @@ REGISTRATION_THROTTLE_RATE = "20/hour"
 
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWS_CREDENTIALS = True
+# allauth's app client sends the session token during login.
+CORS_ALLOW_HEADERS = (*default_headers, "x-session-token")

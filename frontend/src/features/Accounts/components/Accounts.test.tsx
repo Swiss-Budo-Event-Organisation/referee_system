@@ -5,8 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import api, { getRequest } from "../../../lib/api";
-import { ACCESS_TOKEN } from "../../../lib/constants";
-import { makeToken } from "../../../test/utils";
+import { logInAs } from "../../../test/utils";
 import ConfirmEmail from "./ConfirmEmail";
 import OnboardingForm from "./OnboardingForm";
 import PendingAccounts from "./PendingAccounts";
@@ -204,7 +203,7 @@ describe("OnboardingForm", () => {
 });
 
 describe("PendingAccounts", () => {
-  beforeEach(() => localStorage.setItem(ACCESS_TOKEN, makeToken(7)));
+  beforeEach(() => logInAs(7));
 
   it("refuses users without the permission, staff or not", async () => {
     responses["/api/user/7"] = { ...staff, permissions: [] };
@@ -213,7 +212,7 @@ describe("PendingAccounts", () => {
   });
 
   it("only shows the accounts to those who may view but not approve them", async () => {
-    localStorage.setItem(ACCESS_TOKEN, makeToken(9));
+    logInAs(9);
     responses["/api/user/9"] = { ...newcomer, permissions: ["accounts.view_account"] };
     renderWith(<PendingAccounts />);
     const row = (await screen.findByText("Paul Pending")).closest("tr") as HTMLElement;

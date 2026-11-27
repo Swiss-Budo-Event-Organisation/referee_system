@@ -25,6 +25,11 @@ DEBUG = False
 
 SECRET_KEY = required("SECRET_KEY")
 
+# Access and refresh tokens are signed with RS256 and this PEM key.
+HEADLESS_JWT_PRIVATE_KEY = required("JWT_PRIVATE_KEY").replace("\\n", "\n")
+HEADLESS_JWT_ALGORITHM = "RS256"
+HEADLESS_SERVE_SPECIFICATION = False
+
 DOMAIN = required("DOMAIN")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[DOMAIN])
 CSRF_TRUSTED_ORIGINS = [f"https://{host}" for host in ALLOWED_HOSTS]

@@ -1,7 +1,5 @@
 from django.urls import include
 from django.urls import path
-from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework_simplejwt.views import TokenRefreshView
 
 from accounts.views import ApproveAccountView
 from accounts.views import ConfirmEmailView
@@ -65,8 +63,6 @@ urlpatterns = [
     path("user/<int:pk>/update/", UpdateUserView.as_view(), name="user"),
     path("profiles/", ListProfilesView.as_view(), name="profile-list"),
     path("profiles/<int:pk>/", DetailProfileView.as_view(), name="profile-detail"),
-    path("token/", TokenObtainPairView.as_view(), name="token-get"),
-    path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("auth/", include("rest_framework.urls", namespace="rest_framework")),
     path("events/", ListEventsView.as_view(), name="event-list"),
     path(

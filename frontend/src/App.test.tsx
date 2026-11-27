@@ -4,13 +4,29 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import App from "./App";
 import api, { getRequest } from "./lib/api";
-import { ACCESS_TOKEN, REFRESH_TOKEN } from "./lib/constants";
-import { makeToken } from "./test/utils";
+import { login, logout, mfaAuthenticate } from "./lib/allauth";
+import { clearTokens, getUser, setTokens } from "./lib/auth";
+import { logInAs, makeToken } from "./test/utils";
 
 vi.mock("./lib/api", () => {
   const api = { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() };
   return { default: api, api, getRequest: vi.fn() };
 });
+
+vi.mock("./lib/allauth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./lib/allauth")>()),
+  login: vi.fn(),
+  logout: vi.fn(),
+  mfaAuthenticate: vi.fn(),
+}));
+
+/** allauth's answer once the user is fully logged in. */
+function loggedIn(userId = 7) {
+  const access = makeToken(userId);
+  const refresh = makeToken(userId, 86400, "refresh");
+  setTokens(access, refresh);
+  return { status: 200, meta: { is_authenticated: true, access_token: access, refresh_token: refresh } };
+}
 
 const location = { id: 1, name: "Dojo Bern", description: "", address: 5 };
 const events = [
@@ -106,8 +122,7 @@ function renderApp(path: string) {
 }
 
 function logIn() {
-  localStorage.setItem(ACCESS_TOKEN, makeToken(7));
-  localStorage.setItem(REFRESH_TOKEN, "refresh-token");
+  logInAs(7);
 }
 
 beforeEach(() => {
@@ -126,8 +141,7 @@ describe("App", () => {
   });
 
   it("logs in and shows the events", async () => {
-    const access = makeToken(7);
-    (api.post as Mock).mockResolvedValue({ data: { access, refresh: "refresh-token" } });
+    (login as Mock).mockImplementation(async () => loggedIn());
     renderApp("/login");
     const user = userEvent.setup();
     await user.type(await screen.findByPlaceholderText("Username"), "john");
@@ -135,20 +149,23 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Login" }));
 
     expect(await screen.findByRole("heading", { name: "Upcoming Events" })).toBeInTheDocument();
-    expect(api.post).toHaveBeenCalledWith("/api/token/", { username: "john", password: "s3cret" });
-    expect(localStorage.getItem(ACCESS_TOKEN)).toBe(access);
+    expect(login).toHaveBeenCalledWith("john", "s3cret");
+    expect(getUser()).toBe(7);
+    expect(localStorage.length).toBe(1); // Only the theme, no tokens.
     expect(screen.queryByRole("link", { name: /Log in/ })).not.toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "John" }));
     expect(screen.getByRole("link", { name: "Profile" })).toHaveAttribute("href", "/profile");
   });
 
-  it("offers the profile, the applications and the logout in the account menu", async () => {
+  it("offers the profile, the applications, security and the logout in the account menu", async () => {
     logIn();
+    (logout as Mock).mockImplementation(async () => clearTokens());
     renderApp("/events/");
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "John" }));
     expect(screen.getByText("John Doe")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "My applications" })).toHaveAttribute("href", "/applications");
+    expect(screen.getByRole("link", { name: "Security" })).toHaveAttribute("href", "/security");
 
     await user.click(screen.getByRole("link", { name: "My applications" }));
     expect(await screen.findByRole("heading", { name: "My Applications" })).toBeInTheDocument();
@@ -163,9 +180,53 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "John" }));
     await user.click(screen.getByRole("link", { name: "Log out" }));
     expect(await screen.findByRole("heading", { name: "Login" })).toBeInTheDocument();
-    expect(localStorage.getItem(ACCESS_TOKEN)).toBeNull();
+    expect(logout).toHaveBeenCalled();
+    expect(getUser()).toBeUndefined();
     expect(screen.queryByRole("button", { name: "John" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Log in/ })).toBeInTheDocument();
+  });
+
+  it("asks for the second factor", async () => {
+    (login as Mock).mockResolvedValue({
+      status: 401,
+      data: { flows: [{ id: "login" }, { id: "mfa_authenticate", is_pending: true, types: ["totp", "recovery_codes"] }] },
+      meta: { is_authenticated: false, session_token: "session" },
+    });
+    (mfaAuthenticate as Mock)
+      .mockResolvedValueOnce({ status: 400, errors: [{ code: "incorrect_code", message: "Incorrect code." }] })
+      .mockImplementationOnce(async () => loggedIn());
+    renderApp("/login");
+    const user = userEvent.setup();
+    await user.type(await screen.findByPlaceholderText("Username"), "john");
+    await user.type(screen.getByPlaceholderText("Password"), "s3cret");
+    await user.click(screen.getByRole("button", { name: "Login" }));
+
+    expect(await screen.findByRole("heading", { name: "Two-factor authentication" })).toBeInTheDocument();
+    expect(getUser()).toBeUndefined();
+    const code = screen.getByLabelText(/Code from your authenticator app/);
+    await user.type(code, "111111");
+    await user.click(screen.getByRole("button", { name: "Verify" }));
+    expect(await screen.findByText("Incorrect code.")).toBeInTheDocument();
+
+    await user.clear(code);
+    await user.type(code, " 123456 ");
+    await user.click(screen.getByRole("button", { name: "Verify" }));
+    expect(await screen.findByRole("heading", { name: "Upcoming Events" })).toBeInTheDocument();
+    expect(mfaAuthenticate).toHaveBeenLastCalledWith("123456");
+  });
+
+  it("shows why the login failed", async () => {
+    (login as Mock).mockResolvedValue({
+      status: 400,
+      errors: [{ code: "username_password_mismatch", message: "The username and/or password you specified are not correct." }],
+    });
+    renderApp("/login");
+    const user = userEvent.setup();
+    await user.type(await screen.findByPlaceholderText("Username"), "john");
+    await user.type(screen.getByPlaceholderText("Password"), "wrong");
+    await user.click(screen.getByRole("button", { name: "Login" }));
+    expect(await screen.findByText(/are not correct/)).toBeInTheDocument();
+    expect(getUser()).toBeUndefined();
   });
 
   it("lists and filters upcoming events", async () => {
@@ -907,9 +968,11 @@ describe("App", () => {
 
   it("logs out", async () => {
     logIn();
+    (logout as Mock).mockImplementation(async () => clearTokens());
     renderApp("/logout");
     expect(await screen.findByRole("heading", { name: "Login" })).toBeInTheDocument();
-    expect(localStorage.getItem(ACCESS_TOKEN)).toBeNull();
+    expect(logout).toHaveBeenCalled();
+    expect(getUser()).toBeUndefined();
   });
 
   it("shows a 404 page", async () => {

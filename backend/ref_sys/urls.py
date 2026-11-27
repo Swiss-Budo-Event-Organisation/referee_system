@@ -23,6 +23,8 @@ from django.urls import path
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("api.urls")),
+    # Login, second factors and tokens (django-allauth, headless).
+    path("_allauth/", include("allauth.headless.urls")),
 ]
 
 if apps.is_installed("debug_toolbar"):

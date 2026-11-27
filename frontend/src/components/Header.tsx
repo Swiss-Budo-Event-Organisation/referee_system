@@ -20,7 +20,7 @@ function NavItem({ to, active, children }: { to: string; active: boolean; childr
     );
 }
 
-/** The account menu on the right: the own profile, the applications and the logout. */
+/** The account menu on the right: profile, applications, security settings and logout. */
 function AccountMenu({ pk }: { pk: number }) {
     const { pathname } = useLocation();
     const profile = useProfileQuery(pk).data;
@@ -33,7 +33,7 @@ function AccountMenu({ pk }: { pk: number }) {
     );
     return (
         <NavDropdown title={title} id="account-menu" align="end"
-            active={within(pathname, "/profile") || within(pathname, "/applications")}>
+            active={["/profile", "/applications", "/security"].some((path) => within(pathname, path))}>
             {profile && (
                 <>
                     <NavDropdown.Header>
@@ -49,6 +49,9 @@ function AccountMenu({ pk }: { pk: number }) {
             <NavDropdown.Item as={Link} to="/applications" eventKey="/applications"
                 active={within(pathname, "/applications")}>
                 <i className="bi bi-card-checklist me-2" aria-hidden="true" />My applications
+            </NavDropdown.Item>
+            <NavDropdown.Item as={Link} to="/security" eventKey="/security" active={within(pathname, "/security")}>
+                <i className="bi bi-shield-lock me-2" aria-hidden="true" />Security
             </NavDropdown.Item>
             <NavDropdown.Divider />
             <NavDropdown.Item as={Link} to="/logout" eventKey="/logout">
