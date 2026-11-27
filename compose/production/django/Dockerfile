@@ -21,6 +21,8 @@ COPY . .
 RUN DJANGO_SETTINGS_MODULE=ref_sys.settings.production \
     ENV_PATH=does-not-exist.env \
     SECRET_KEY=collectstatic-only \
+    JWT_PRIVATE_KEY=collectstatic-only \
+    MFA_ENCRYPTION_KEYS=collectstatic-only \
     DOMAIN=localhost \
     EMAIL=consolemail:// \
     DEFAULT_FROM_EMAIL=noreply@localhost \
