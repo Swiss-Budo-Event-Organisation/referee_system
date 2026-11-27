@@ -9,9 +9,10 @@ import { Footer } from "../components/Footer";
 type ContextProp = {
     user: UserType;
     setUser: CallableFunction;
+    theme: string;
     toggleTheme: CallableFunction;
 }
-export const UserContext = createContext<ContextProp>({ "user": {}, "setUser": () => { }, "toggleTheme": () => { } });
+export const UserContext = createContext<ContextProp>({ "user": {}, "setUser": () => { }, "theme": "light", "toggleTheme": () => { } });
 
 function MainLayout() {
     const preferesDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -24,7 +25,7 @@ function MainLayout() {
     document.documentElement.setAttribute("data-bs-theme", selectedTheme || defaultTheme)
     const id = getUser();
     const [user, setUser] = useState<UserType>({ id, "isAuthenticated": id !== undefined });
-    const [_, setTheme] = useState<string>(selectedTheme || defaultTheme);
+    const [theme, setTheme] = useState<string>(selectedTheme || defaultTheme);
     function toggleTheme(_event: MouseEvent): void {
         setTheme((prev) => {
             const next: ThemeLiteral = (prev === "light") ? "dark" : "light"
@@ -34,7 +35,7 @@ function MainLayout() {
         });
     }
     return (
-        <UserContext.Provider value={{ user, setUser, toggleTheme }} >
+        <UserContext.Provider value={{ user, setUser, theme, toggleTheme }} >
             <header>
                 <Header />
             </header>
