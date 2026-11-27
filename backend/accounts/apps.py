@@ -6,6 +6,8 @@ class AccountsConfig(AppConfig):
     name = "accounts"
 
     def ready(self):
+        import accounts.checks
+        import accounts.password_change
         import accounts.signals  # noqa: F401
 
         return super().ready()

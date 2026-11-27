@@ -20,9 +20,19 @@ from django.contrib import admin
 from django.urls import include
 from django.urls import path
 
+from accounts.password_change import change_password
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("api.urls")),
+    # Login, second factors and tokens (django-allauth, headless). The
+    # password change comes first: it also hands out new tokens.
+    path(
+        "_allauth/app/v1/account/password/change",
+        change_password,
+        name="change-password",
+    ),
+    path("_allauth/", include("allauth.headless.urls")),
 ]
 
 if apps.is_installed("debug_toolbar"):

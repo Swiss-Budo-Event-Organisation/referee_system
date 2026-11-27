@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+import { clearTokens } from "../lib/auth";
 
 // jsdom does not implement matchMedia, MainLayout uses it for the theme.
 Object.defineProperty(window, "matchMedia", {
@@ -25,6 +26,8 @@ configure({ asyncUtilTimeout: 5000 });
 
 afterEach(() => {
   cleanup();
+  clearTokens();
   localStorage.clear();
+  sessionStorage.clear();
   document.documentElement.removeAttribute("data-bs-theme");
 });

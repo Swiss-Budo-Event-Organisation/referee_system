@@ -94,11 +94,12 @@ class TestRegister(APITestCase):
     def test_cannot_log_in_before_approval(self):
         self.register()
         response = self.client.post(
-            reverse("token-get"),
+            "/_allauth/app/v1/auth/login",
             {"username": "newbie", "password": PASSWORD},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertNotEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn("access_token", response.json().get("meta", {}))
 
     def test_passwords_must_match(self):
         response = self.register(password_repeat="other-Pa55word")
@@ -293,7 +294,7 @@ class TestApproval(APITestCase):
         self.assertTrue(self.pending.account.email_confirmed)
 
         response = self.client.post(
-            reverse("token-get"),
+            "/_allauth/app/v1/auth/login",
             {"username": "newbie", "password": PASSWORD},
             format="json",
         )

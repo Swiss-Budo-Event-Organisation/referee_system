@@ -17,6 +17,9 @@ ALLOWED_HOSTS = ["localhost", "0.0.0.0", "127.0.0.1"]
 
 DATABASES = database_config()
 
+# Passkeys over plain http://localhost.
+MFA_WEBAUTHN_ALLOW_INSECURE_ORIGIN = True
+
 
 INSTALLED_APPS += ["debug_toolbar"]
 

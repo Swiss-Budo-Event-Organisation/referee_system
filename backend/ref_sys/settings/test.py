@@ -39,3 +39,6 @@ STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
+
+# Passkeys over plain http in tests, as in development.
+MFA_WEBAUTHN_ALLOW_INSECURE_ORIGIN = True

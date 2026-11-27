@@ -12,7 +12,7 @@
 		-Server
 	}
 
-	@django path /api/* /admin /admin/* /static/*
+	@django path /api/* /_allauth/* /admin /admin/* /static/*
 	handle @django {
 		reverse_proxy django:8000
 	}

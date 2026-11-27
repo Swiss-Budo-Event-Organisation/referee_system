@@ -23,7 +23,10 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
     const { user, setUser } = useContext(UserContext);
 
     useEffect(() => {
-        validToken().catch(() => setUser({ "isAuthorized": false }))
+        // Logged out once the refresh token has expired or was revoked.
+        validToken()
+            .then((token) => { if (!token) setUser({ "id": undefined, "isAuthenticated": false }) })
+            .catch(() => setUser({ "id": undefined, "isAuthenticated": false }))
     }, [setUser])
 
     if (user.isAuthenticated === undefined) {

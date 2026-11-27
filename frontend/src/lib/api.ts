@@ -1,5 +1,5 @@
 import axios from "axios";
-import { validToken } from "./auth";
+import { refreshToken, validToken } from "./auth";
 
 export const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL
@@ -35,9 +35,20 @@ api.interceptors.response.use(
         const requestID = `${response.config.url}_${response.config.method}`;
         requestPending.delete(requestID);
         return response
-    }, (error) => {
-        if (error.config) {
-            requestPending.delete(`${error.config.url}_${error.config.method}`);
+    }, async (error) => {
+        const config = error.config;
+        if (config) {
+            requestPending.delete(`${config.url}_${config.method}`);
+        }
+        // The access token may have been rejected before it expired, e.g.
+        // after a restart of the server. Try once more with a fresh one.
+        if (config && error.response?.status === 401 && !config._retried) {
+            config._retried = true;
+            const token = await refreshToken();
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+                return api.request(config);
+            }
         }
         return Promise.reject(error);
     }

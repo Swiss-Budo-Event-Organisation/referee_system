@@ -3,7 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Route, Navigate, createBrowserRouter, createRoutesFromElements, RouterProvider, useNavigate } from "react-router-dom";
 import LoadingIndicator from "./components/LoadingIndicator";
 import { UserContext } from "./layouts/MainLayout";
-import { ACCESS_TOKEN, REFRESH_TOKEN } from "./lib/constants";
+import { logout } from "./lib/allauth";
+import { clearTokens } from "./lib/auth";
 
 const CompetitionInvitation = lazy(() => import("./pages/CompetitionInvitation"));
 const ConfirmEmail = lazy(() => import("./pages/ConfirmEmail"));
@@ -19,28 +20,34 @@ const Onboarding = lazy(() => import("./pages/Onboarding"));
 const PendingAccounts = lazy(() => import("./pages/PendingAccounts"));
 const ProtectedRoute = lazy(() => import("./components/ProtectedRoute"));
 const Register = lazy(() => import("./pages/Register"));
+const Security = lazy(() => import("./pages/Security"));
 const UserApplications = lazy(() => import("./pages/UserApplications"));
 const UserProfile = lazy(() => import("./pages/UserProfile"));
 
 
-/** Forgets the tokens and everything loaded for the user; the theme is kept. */
+/**
+ * Ends the session on the server, which also revokes the tokens, then
+ * forgets everything loaded for the user; the theme is kept.
+ */
 function Logout() {
   const { setUser } = useContext(UserContext);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   // The user is forgotten before leaving, or the login page would still see them.
   useEffect(() => {
-    localStorage.removeItem(ACCESS_TOKEN);
-    localStorage.removeItem(REFRESH_TOKEN);
-    queryClient.clear();
-    setUser({ "id": undefined, "isAuthenticated": false });
-    navigate("/login", { replace: true });
+    logout()
+      .catch(() => { /* The tokens are cleared locally anyway. */ })
+      .finally(() => {
+        queryClient.clear();
+        setUser({ "id": undefined, "isAuthenticated": false });
+        navigate("/login", { replace: true });
+      });
   }, [queryClient, setUser, navigate]);
   return <LoadingIndicator />
 }
 
 function RegisterandLogout() {
-  localStorage.clear()
+  clearTokens()
   return <Register />
 }
 
@@ -103,6 +110,13 @@ function App() {
           <Suspense fallback={<LoadingIndicator size="15rem" />}>
             <ProtectedRoute>
               <UserApplications />
+            </ProtectedRoute>
+          </Suspense>
+        } />
+        <Route path="security" element={
+          <Suspense fallback={<LoadingIndicator size="15rem" />}>
+            <ProtectedRoute>
+              <Security />
             </ProtectedRoute>
           </Suspense>
         } />

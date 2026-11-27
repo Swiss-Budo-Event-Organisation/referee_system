@@ -1,11 +1,29 @@
+import time
+
+import jwt
+from allauth.mfa.models import Authenticator
+from allauth.mfa.totp.internal import auth as totp_auth
+from allauth.mfa.utils import decrypt
+from cryptography.fernet import Fernet
+from cryptography.fernet import InvalidToken
 from django.contrib.auth.hashers import get_hasher
 from django.contrib.auth.hashers import identify_hasher
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.urls import reverse
 from rest_framework import status
+from rest_framework.test import APIClient
 from rest_framework.test import APITestCase
 
+from accounts.adapter import fallback_key
 from api.tests.helpers import make_user
+
+APP = "/_allauth/app/v1"
+
+
+def totp_code(secret: str) -> str:
+    counter = int(time.time()) // 30
+    return totp_auth.format_hotp_value(totp_auth.hotp_value(secret, counter))
 
 
 class TestRegistration(APITestCase):
@@ -41,52 +59,323 @@ class TestRegistration(APITestCase):
         self.assertIn("username", response.data)
 
 
-class TestJWT(APITestCase):
+class AllauthClient(APITestCase):
+    """Logs in like the React app: allauth's app client and its JWTs."""
+
     def setUp(self):
+        # Rate limits and used TOTP codes are kept in the cache.
+        cache.clear()
         self.user = make_user("john", "s3cret-Pa55word")
 
-    def obtain(self, password="s3cret-Pa55word"):
+    def login(self, username="john", password="s3cret-Pa55word"):
         return self.client.post(
-            reverse("token-get"),
-            {"username": "john", "password": password},
+            f"{APP}/auth/login",
+            {"username": username, "password": password},
             format="json",
         )
 
-    def test_obtain_token_pair(self):
-        response = self.obtain()
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("access", response.data)
-        self.assertIn("refresh", response.data)
+    def bearer(self, access_token=None):
+        if access_token is None:
+            self.client.credentials()
+        else:
+            self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
+
+
+class TestLogin(AllauthClient):
+    def test_login_returns_token_pair(self):
+        response = self.login()
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.json())
+        meta = response.json()["meta"]
+        self.assertTrue(meta["is_authenticated"])
+        self.assertIn("access_token", meta)
+        self.assertIn("refresh_token", meta)
+
+    def test_access_token_holds_the_user_id(self):
+        access = self.login().json()["meta"]["access_token"]
+        payload = jwt.decode(access, options={"verify_signature": False})
+        self.assertEqual(payload["sub"], str(self.user.pk))
 
     def test_wrong_password_is_rejected(self):
-        response = self.obtain("wrong")
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        response = self.login(password="wrong")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotIn("access_token", response.json().get("meta", {}))
 
-    def test_access_token_authenticates_requests(self):
-        access = self.obtain().data["access"]
-        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+    def test_inactive_user_gets_no_tokens(self):
+        make_user("pending", "s3cret-Pa55word", is_active=False)
+        response = self.login("pending")
+        self.assertNotEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn("access_token", response.json().get("meta", {}))
+
+    def test_signup_through_allauth_is_closed(self):
+        response = self.client.post(
+            f"{APP}/auth/signup",
+            {"username": "x", "password": "s3cret-Pa55word"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(User.objects.filter(username="x").exists())
+
+    def test_access_token_authenticates_api_requests(self):
+        self.bearer(self.login().json()["meta"]["access_token"])
         response = self.client.get(reverse("event-list"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_invalid_token_is_rejected(self):
-        self.client.credentials(HTTP_AUTHORIZATION="Bearer not-a-token")
+        self.bearer("not-a-token")
         response = self.client.get(reverse("event-list"))
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_refresh_returns_new_access_token(self):
-        refresh = self.obtain().data["refresh"]
+    def test_refresh_rotates_the_refresh_token(self):
+        refresh = self.login().json()["meta"]["refresh_token"]
         response = self.client.post(
-            reverse("token-refresh"), {"refresh": refresh}, format="json"
+            f"{APP}/tokens/refresh", {"refresh_token": refresh}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("access", response.data)
+        data = response.json()["data"]
+        self.assertIn("access_token", data)
+        self.assertNotEqual(data["refresh_token"], refresh)
+        # The old refresh token is used up.
+        again = self.client.post(
+            f"{APP}/tokens/refresh", {"refresh_token": refresh}, format="json"
+        )
+        self.assertNotEqual(again.status_code, status.HTTP_200_OK)
+
+    def test_logout_revokes_the_tokens(self):
+        meta = self.login().json()["meta"]
+        self.bearer(meta["access_token"])
+        response = self.client.delete(f"{APP}/auth/session")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        response = self.client.get(reverse("event-list"))
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.bearer()
+        response = self.client.post(
+            f"{APP}/tokens/refresh",
+            {"refresh_token": meta["refresh_token"]},
+            format="json",
+        )
+        self.assertNotEqual(response.status_code, status.HTTP_200_OK)
 
     def test_session_auth_is_not_accepted_by_api(self):
-        # Only JWT is configured for the API.
         self.client.force_login(self.user)
         response = self.client.get(reverse("event-list"))
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_passkeys_are_bound_to_the_configured_domain(self):
+        url = f"{APP}/auth/webauthn/login"
+        options = self.client.get(url).json()["data"]["request_options"]
+        self.assertEqual(options["publicKey"]["rpId"], "testserver")
+        with self.settings(MFA_WEBAUTHN_RP_ID="referee.example.ch"):
+            options = self.client.get(url).json()["data"]["request_options"]
+        self.assertEqual(options["publicKey"]["rpId"], "referee.example.ch")
+
+    def test_old_simplejwt_routes_are_gone(self):
+        response = self.client.post("/api/token/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_browsable_api_login_page(self):
         response = self.client.get(reverse("rest_framework:login"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+class TestTOTP(AllauthClient):
+    def setUp(self):
+        super().setUp()
+        self.secret = self.activate_totp()
+
+    def activate_totp(self):
+        self.bearer(self.login().json()["meta"]["access_token"])
+        response = self.client.get(f"{APP}/account/authenticators/totp")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        secret = response.json()["meta"]["secret"]
+        # Adding a factor asks for the password again, even right after login.
+        url = f"{APP}/account/authenticators/totp"
+        response = self.client.post(url, {"code": totp_code(secret)}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.json()["data"]["flows"][0]["id"], "reauthenticate")
+        response = self.client.post(
+            f"{APP}/auth/reauthenticate",
+            {"password": "s3cret-Pa55word"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.json())
+        response = self.client.post(url, {"code": totp_code(secret)}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.json())
+        self.bearer()
+        # The code may be used once only.
+        cache.clear()
+        return secret
+
+    def authenticate(self, session_token, code):
+        return self.client.post(
+            f"{APP}/auth/2fa/authenticate",
+            {"code": code},
+            format="json",
+            HTTP_X_SESSION_TOKEN=session_token,
+        )
+
+    def test_secret_is_stored_encrypted(self):
+        stored = Authenticator.objects.get(user=self.user, type="totp").data["secret"]
+        self.assertNotIn(self.secret, stored)
+        self.assertEqual(decrypt(stored), self.secret)
+
+    def test_recovery_code_seed_is_stored_encrypted(self):
+        stored = Authenticator.objects.get(user=self.user, type="recovery_codes")
+        seed = decrypt(stored.data["seed"])
+        self.assertNotIn(seed, str(stored.data))
+
+    def test_a_new_key_still_decrypts_with_the_old_one(self):
+        stored = Authenticator.objects.get(user=self.user, type="totp").data["secret"]
+        with self.settings(MFA_ENCRYPTION_KEYS=[Fernet.generate_key().decode()]):
+            with self.assertRaises(InvalidToken):
+                decrypt(stored)
+        old = fallback_key()
+        with self.settings(MFA_ENCRYPTION_KEYS=[Fernet.generate_key().decode(), old]):
+            self.assertEqual(decrypt(stored), self.secret)
+
+    def test_login_asks_for_the_second_factor(self):
+        response = self.login()
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        body = response.json()
+        self.assertNotIn("access_token", body["meta"])
+        self.assertIn("session_token", body["meta"])
+        pending = [flow for flow in body["data"]["flows"] if flow.get("is_pending")]
+        self.assertEqual(pending[0]["id"], "mfa_authenticate")
+        self.assertIn("totp", pending[0]["types"])
+
+    def test_code_completes_the_login(self):
+        session_token = self.login().json()["meta"]["session_token"]
+        response = self.authenticate(session_token, totp_code(self.secret))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.json())
+        self.bearer(response.json()["meta"]["access_token"])
+        self.assertEqual(
+            self.client.get(reverse("event-list")).status_code, status.HTTP_200_OK
+        )
+
+    def test_wrong_code_gets_no_tokens(self):
+        session_token = self.login().json()["meta"]["session_token"]
+        response = self.authenticate(session_token, "000000")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotIn("access_token", response.json().get("meta", {}))
+
+    def test_session_token_alone_does_not_open_the_api(self):
+        session_token = self.login().json()["meta"]["session_token"]
+        response = self.client.get(
+            reverse("event-list"), HTTP_X_SESSION_TOKEN=session_token
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_recovery_code_completes_the_login(self):
+        session_token = self.login().json()["meta"]["session_token"]
+        access = self.authenticate(session_token, totp_code(self.secret)).json()
+        self.bearer(access["meta"]["access_token"])
+        url = f"{APP}/account/authenticators/recovery-codes"
+        # Seeing the codes needs a fresh reauthentication as well.
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_401_UNAUTHORIZED)
+        self.client.post(
+            f"{APP}/auth/reauthenticate",
+            {"password": "s3cret-Pa55word"},
+            format="json",
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.json())
+        codes = response.json()["data"]["unused_codes"]
+        self.assertEqual(len(codes), 10)
+
+        self.bearer()
+        session_token = self.login().json()["meta"]["session_token"]
+        response = self.authenticate(session_token, codes[0])
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.json())
+        self.assertIn("access_token", response.json()["meta"])
+
+
+class TestPasswordChange(AllauthClient):
+    url = f"{APP}/account/password/change"
+
+    def change(self, current="s3cret-Pa55word", new="N3w-Pa55word!x"):
+        return self.client.post(
+            self.url,
+            {"current_password": current, "new_password": new},
+            format="json",
+        )
+
+    def test_change_keeps_this_device_logged_in(self):
+        self.bearer(self.login().json()["meta"]["access_token"])
+        response = self.change()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.json())
+        meta = response.json()["meta"]
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("N3w-Pa55word!x"))
+        self.bearer(meta["access_token"])
+        self.assertEqual(
+            self.client.get(reverse("event-list")).status_code, status.HTTP_200_OK
+        )
+        self.bearer()
+        refreshed = self.client.post(
+            f"{APP}/tokens/refresh",
+            {"refresh_token": meta["refresh_token"]},
+            format="json",
+        )
+        self.assertEqual(refreshed.status_code, status.HTTP_200_OK)
+
+    def test_change_logs_out_other_devices(self):
+        other = self.login().json()["meta"]
+        self.bearer(self.login().json()["meta"]["access_token"])
+        self.assertEqual(self.change().status_code, status.HTTP_200_OK)
+
+        self.bearer(other["access_token"])
+        response = self.client.get(reverse("event-list"))
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.bearer()
+        response = self.client.post(
+            f"{APP}/tokens/refresh",
+            {"refresh_token": other["refresh_token"]},
+            format="json",
+        )
+        self.assertNotEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_old_password_no_longer_logs_in(self):
+        self.bearer(self.login().json()["meta"]["access_token"])
+        self.change()
+        self.bearer()
+        self.assertEqual(self.login().status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            self.login(password="N3w-Pa55word!x").status_code, status.HTTP_200_OK
+        )
+
+    def test_wrong_current_password_is_rejected(self):
+        self.bearer(self.login().json()["meta"]["access_token"])
+        response = self.change(current="wrong")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()["errors"][0]["param"], "current_password")
+        self.assertNotIn("access_token", response.json().get("meta", {}))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("s3cret-Pa55word"))
+
+    def test_new_password_is_validated(self):
+        self.bearer(self.login().json()["meta"]["access_token"])
+        response = self.change(new="12345678")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()["errors"][0]["param"], "new_password")
+
+    def test_needs_a_login(self):
+        response = self.change()
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("s3cret-Pa55word"))
+
+    def test_works_from_another_origin_without_csrf_token(self):
+        # The browser sends an Origin header; the app client uses no cookies.
+        client = APIClient(enforce_csrf_checks=True)
+        access = self.login().json()["meta"]["access_token"]
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+        response = client.post(
+            self.url,
+            {"current_password": "s3cret-Pa55word", "new_password": "N3w-Pa55word!x"},
+            format="json",
+            HTTP_ORIGIN="http://frontend.example",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)

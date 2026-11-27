@@ -20,15 +20,17 @@ class TestMiddleware(APITestCase):
 
     def test_cors_preflight(self):
         response = self.client.options(
-            reverse("token-get"),
+            "/_allauth/app/v1/auth/login",
             HTTP_ORIGIN="http://frontend.example",
             HTTP_ACCESS_CONTROL_REQUEST_METHOD="POST",
-            HTTP_ACCESS_CONTROL_REQUEST_HEADERS="authorization,content-type",
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS="authorization,content-type,"
+            "x-session-token",
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Access-Control-Allow-Origin"], "*")
         self.assertIn("POST", response["Access-Control-Allow-Methods"])
         self.assertIn("authorization", response["Access-Control-Allow-Headers"])
+        self.assertIn("x-session-token", response["Access-Control-Allow-Headers"])
 
     def test_security_headers(self):
         response = self.client.get(reverse("admin:login"))
@@ -72,8 +74,24 @@ class TestSettings(TestCase):
             with self.subTest(value=value):
                 self.assertEqual(field.clean(value).isoformat(), "2024-12-01")
 
-    def test_jwt_lifetimes(self):
-        from rest_framework_simplejwt.settings import api_settings
+    def test_jwt_settings(self):
+        from allauth.headless import app_settings
 
-        self.assertEqual(api_settings.ACCESS_TOKEN_LIFETIME.total_seconds(), 1800)
-        self.assertEqual(api_settings.REFRESH_TOKEN_LIFETIME.days, 30)
+        self.assertEqual(app_settings.JWT_ACCESS_TOKEN_EXPIRES_IN, 300)
+        self.assertEqual(app_settings.JWT_REFRESH_TOKEN_EXPIRES_IN, 86400)
+        self.assertTrue(app_settings.JWT_STATEFUL_VALIDATION_ENABLED)
+        self.assertTrue(app_settings.JWT_ROTATE_REFRESH_TOKEN)
+        self.assertEqual(type(app_settings.TOKEN_STRATEGY).__name__, "JWTTokenStrategy")
+
+    def test_mfa_settings(self):
+        from allauth.mfa import app_settings
+
+        self.assertEqual(
+            sorted(app_settings.SUPPORTED_TYPES),
+            ["recovery_codes", "totp", "webauthn"],
+        )
+        self.assertTrue(app_settings.PASSKEY_LOGIN_ENABLED)
+        self.assertFalse(app_settings.PASSKEY_SIGNUP_ENABLED)
+
+    def test_no_social_login(self):
+        self.assertNotIn("allauth.socialaccount", settings.INSTALLED_APPS)
