@@ -12,6 +12,7 @@ from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.urls import reverse
 from rest_framework import status
+from rest_framework.test import APIClient
 from rest_framework.test import APITestCase
 
 from accounts.adapter import fallback_key
@@ -288,3 +289,93 @@ class TestTOTP(AllauthClient):
         response = self.authenticate(session_token, codes[0])
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.json())
         self.assertIn("access_token", response.json()["meta"])
+
+
+class TestPasswordChange(AllauthClient):
+    url = f"{APP}/account/password/change"
+
+    def change(self, current="s3cret-Pa55word", new="N3w-Pa55word!x"):
+        return self.client.post(
+            self.url,
+            {"current_password": current, "new_password": new},
+            format="json",
+        )
+
+    def test_change_keeps_this_device_logged_in(self):
+        self.bearer(self.login().json()["meta"]["access_token"])
+        response = self.change()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.json())
+        meta = response.json()["meta"]
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("N3w-Pa55word!x"))
+        self.bearer(meta["access_token"])
+        self.assertEqual(
+            self.client.get(reverse("event-list")).status_code, status.HTTP_200_OK
+        )
+        self.bearer()
+        refreshed = self.client.post(
+            f"{APP}/tokens/refresh",
+            {"refresh_token": meta["refresh_token"]},
+            format="json",
+        )
+        self.assertEqual(refreshed.status_code, status.HTTP_200_OK)
+
+    def test_change_logs_out_other_devices(self):
+        other = self.login().json()["meta"]
+        self.bearer(self.login().json()["meta"]["access_token"])
+        self.assertEqual(self.change().status_code, status.HTTP_200_OK)
+
+        self.bearer(other["access_token"])
+        response = self.client.get(reverse("event-list"))
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.bearer()
+        response = self.client.post(
+            f"{APP}/tokens/refresh",
+            {"refresh_token": other["refresh_token"]},
+            format="json",
+        )
+        self.assertNotEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_old_password_no_longer_logs_in(self):
+        self.bearer(self.login().json()["meta"]["access_token"])
+        self.change()
+        self.bearer()
+        self.assertEqual(self.login().status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            self.login(password="N3w-Pa55word!x").status_code, status.HTTP_200_OK
+        )
+
+    def test_wrong_current_password_is_rejected(self):
+        self.bearer(self.login().json()["meta"]["access_token"])
+        response = self.change(current="wrong")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()["errors"][0]["param"], "current_password")
+        self.assertNotIn("access_token", response.json().get("meta", {}))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("s3cret-Pa55word"))
+
+    def test_new_password_is_validated(self):
+        self.bearer(self.login().json()["meta"]["access_token"])
+        response = self.change(new="12345678")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()["errors"][0]["param"], "new_password")
+
+    def test_needs_a_login(self):
+        response = self.change()
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("s3cret-Pa55word"))
+
+    def test_works_from_another_origin_without_csrf_token(self):
+        # The browser sends an Origin header; the app client uses no cookies.
+        client = APIClient(enforce_csrf_checks=True)
+        access = self.login().json()["meta"]["access_token"]
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+        response = client.post(
+            self.url,
+            {"current_password": "s3cret-Pa55word", "new_password": "N3w-Pa55word!x"},
+            format="json",
+            HTTP_ORIGIN="http://frontend.example",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)

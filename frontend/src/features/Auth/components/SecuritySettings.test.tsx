@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
     activateTOTP,
+    changePassword,
     deleteWebAuthn,
     getAuthenticators,
     getRecoveryCodes,
@@ -104,5 +105,54 @@ describe("SecuritySettings", () => {
 
         await user.click(await screen.findByRole("button", { name: "Remove" }));
         expect(deleteWebAuthn).toHaveBeenCalledWith([3]);
+    });
+
+    it("changes the password", async () => {
+        (changePassword as Mock).mockResolvedValue({ status: 200, meta: { access_token: "new" } });
+        const user = userEvent.setup();
+        render(<SecuritySettings />);
+
+        await user.type(await screen.findByLabelText("Current password"), "old-Pa55word");
+        await user.type(screen.getByLabelText("New password"), "N3w-Pa55word!x");
+        await user.type(screen.getByLabelText("Repeat the new password"), "N3w-Pa55word!x");
+        await user.click(screen.getByRole("button", { name: "Change password" }));
+
+        expect(changePassword).toHaveBeenCalledWith("old-Pa55word", "N3w-Pa55word!x");
+        await waitFor(() => expect(screen.getByLabelText("Current password")).toHaveValue(""));
+        expect(screen.getByLabelText("New password")).toHaveValue("");
+    });
+
+    it("does not send new passwords that do not match", async () => {
+        const user = userEvent.setup();
+        render(<SecuritySettings />);
+
+        await user.type(await screen.findByLabelText("Current password"), "old-Pa55word");
+        await user.type(screen.getByLabelText("New password"), "N3w-Pa55word!x");
+        await user.type(screen.getByLabelText("Repeat the new password"), "N3w-Pa55word!y");
+        await user.click(screen.getByRole("button", { name: "Change password" }));
+
+        expect(screen.getByText("The new passwords do not match.")).toBeInTheDocument();
+        expect(changePassword).not.toHaveBeenCalled();
+    });
+
+    it("shows the errors of the server by field", async () => {
+        (changePassword as Mock).mockResolvedValue({
+            status: 400,
+            errors: [
+                { code: "enter_current_password", param: "current_password", message: "Please type your current password." },
+            ],
+        });
+        const user = userEvent.setup();
+        render(<SecuritySettings />);
+
+        await user.type(await screen.findByLabelText("Current password"), "wrong");
+        await user.type(screen.getByLabelText("New password"), "N3w-Pa55word!x");
+        await user.type(screen.getByLabelText("Repeat the new password"), "N3w-Pa55word!x");
+        await user.click(screen.getByRole("button", { name: "Change password" }));
+
+        expect(await screen.findByText("Please type your current password.")).toBeInTheDocument();
+        expect(screen.getByLabelText("Current password")).toHaveClass("is-invalid");
+        // The form keeps what was typed, to correct it.
+        expect(screen.getByLabelText("New password")).toHaveValue("N3w-Pa55word!x");
     });
 });

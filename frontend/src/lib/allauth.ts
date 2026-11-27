@@ -162,6 +162,19 @@ export async function webauthnReauthenticate() {
     return call("post", "/auth/webauthn/reauthenticate", { credential });
 }
 
+// Password ------------------------------------------------------------------------
+
+/**
+ * Logs out every other device. This one stays logged in: the response
+ * carries new tokens, which call() keeps.
+ */
+export async function changePassword(currentPassword: string, newPassword: string) {
+    return call("post", "/account/password/change", {
+        current_password: currentPassword,
+        new_password: newPassword,
+    });
+}
+
 // Managing the factors ------------------------------------------------------------
 
 export async function getAuthenticators() {

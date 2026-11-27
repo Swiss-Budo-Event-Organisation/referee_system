@@ -7,6 +7,7 @@ import {
     activateTOTP,
     addWebAuthn,
     Authenticator,
+    changePassword,
     deactivateTOTP,
     deleteWebAuthn,
     errorMessage,
@@ -25,6 +26,81 @@ function date(timestamp: number | null): string {
 }
 
 type Reauth = ReturnType<typeof useReauth>["withReauth"];
+
+type PasswordErrors = { current?: string; new?: string; repeat?: string; other?: string };
+
+function Password() {
+    const [errors, setErrors] = useState<PasswordErrors>({});
+    const [busy, setBusy] = useState(false);
+
+    async function submit(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const data = new FormData(form);
+        const current = String(data.get("current_password") ?? "");
+        const next = String(data.get("new_password") ?? "");
+        if (next !== String(data.get("repeat_password") ?? "")) {
+            setErrors({ repeat: "The new passwords do not match." });
+            return;
+        }
+        setBusy(true);
+        setErrors({});
+        try {
+            const res = await changePassword(current, next);
+            if (res.status === 200) {
+                form.reset();
+                toast.success("Your password was changed. Other devices were logged out.");
+                return;
+            }
+            const byField = (param: string) =>
+                res.errors?.filter((e) => e.param === param).map((e) => e.message).join(" ") || undefined;
+            const fieldErrors = { current: byField("current_password"), new: byField("new_password") };
+            setErrors({
+                ...fieldErrors,
+                other: fieldErrors.current || fieldErrors.new
+                    ? undefined
+                    : errorMessage(res, "The password could not be changed."),
+            });
+        } catch {
+            setErrors({ other: "The password could not be changed." });
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    return (
+        <Card className="mb-4">
+            <Card.Header as="h2" className="h5">Password</Card.Header>
+            <Card.Body>
+                <Form onSubmit={submit} noValidate>
+                    {errors.other && <Alert variant="danger">{errors.other}</Alert>}
+                    <Form.Group className="mb-3">
+                        <Form.Label htmlFor="current-password">Current password</Form.Label>
+                        <Form.Control id="current-password" name="current_password" type="password"
+                            autoComplete="current-password" required disabled={busy} isInvalid={Boolean(errors.current)} />
+                        <Form.Control.Feedback type="invalid">{errors.current}</Form.Control.Feedback>
+                    </Form.Group>
+                    <Form.Group className="mb-3">
+                        <Form.Label htmlFor="new-password">New password</Form.Label>
+                        <Form.Control id="new-password" name="new_password" type="password"
+                            autoComplete="new-password" required disabled={busy} isInvalid={Boolean(errors.new)} />
+                        <Form.Control.Feedback type="invalid">{errors.new}</Form.Control.Feedback>
+                    </Form.Group>
+                    <Form.Group className="mb-3">
+                        <Form.Label htmlFor="repeat-password">Repeat the new password</Form.Label>
+                        <Form.Control id="repeat-password" name="repeat_password" type="password"
+                            autoComplete="new-password" required disabled={busy} isInvalid={Boolean(errors.repeat)} />
+                        <Form.Control.Feedback type="invalid">{errors.repeat}</Form.Control.Feedback>
+                    </Form.Group>
+                    <p className="small text-body-secondary">
+                        Changing the password logs you out on all other devices.
+                    </p>
+                    <Button type="submit" disabled={busy}>Change password</Button>
+                </Form>
+            </Card.Body>
+        </Card>
+    );
+}
 
 function AuthenticatorApp({ active, reload, withReauth }: { active?: Authenticator; reload: () => void; withReauth: Reauth }) {
     const [setup, setSetup] = useState<{ secret: string; url: string } | null>(null);
@@ -264,7 +340,7 @@ function RecoveryCodes({ summary, withReauth }: { summary?: Authenticator; withR
     );
 }
 
-/** Second factors of the logged-in user: authenticator app, keys, recovery codes. */
+/** The password and second factors of the logged-in user. */
 function SecuritySettings() {
     const [authenticators, setAuthenticators] = useState<Authenticator[] | null>(null);
     const [failed, setFailed] = useState(false);
@@ -297,6 +373,7 @@ function SecuritySettings() {
                     can still log in if you lose it.
                 </Alert>
             )}
+            <Password />
             <SecurityKeys keys={keys} reload={reload} withReauth={withReauth} />
             <AuthenticatorApp active={totp} reload={reload} withReauth={withReauth} />
             <RecoveryCodes summary={recovery} withReauth={withReauth} />
