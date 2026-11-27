@@ -9,7 +9,7 @@ function Login() {
     const { user, setUser } = useContext(UserContext);
     const userID = getUser();
     if (userID !== undefined && user?.id === userID) {
-        setUser({ "id": user, "isAuthenticated": true })
+        setUser({ "id": userID, "isAuthenticated": true })
         return <Navigate to={next ? next : "/events"} />
     }
     return <UserForm route="/api/token/" method="login" next={next} />

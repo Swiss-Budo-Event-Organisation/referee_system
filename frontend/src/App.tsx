@@ -1,7 +1,9 @@
-import { lazy, Suspense, useContext } from "react";
-import { Route, Navigate, createBrowserRouter, createRoutesFromElements, RouterProvider } from "react-router-dom";
+import { lazy, Suspense, useContext, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Route, Navigate, createBrowserRouter, createRoutesFromElements, RouterProvider, useNavigate } from "react-router-dom";
 import LoadingIndicator from "./components/LoadingIndicator";
 import { UserContext } from "./layouts/MainLayout";
+import { ACCESS_TOKEN, REFRESH_TOKEN } from "./lib/constants";
 
 const CompetitionInvitation = lazy(() => import("./pages/CompetitionInvitation"));
 const ConfirmEmail = lazy(() => import("./pages/ConfirmEmail"));
@@ -17,14 +19,24 @@ const Onboarding = lazy(() => import("./pages/Onboarding"));
 const PendingAccounts = lazy(() => import("./pages/PendingAccounts"));
 const ProtectedRoute = lazy(() => import("./components/ProtectedRoute"));
 const Register = lazy(() => import("./pages/Register"));
+const UserApplications = lazy(() => import("./pages/UserApplications"));
 const UserProfile = lazy(() => import("./pages/UserProfile"));
 
 
+/** Forgets the tokens and everything loaded for the user; the theme is kept. */
 function Logout() {
   const { setUser } = useContext(UserContext);
-  setUser({ "id": undefined, "isAuthenticated": false })
-  localStorage.clear()
-  return <Navigate to="/login" />
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  // The user is forgotten before leaving, or the login page would still see them.
+  useEffect(() => {
+    localStorage.removeItem(ACCESS_TOKEN);
+    localStorage.removeItem(REFRESH_TOKEN);
+    queryClient.clear();
+    setUser({ "id": undefined, "isAuthenticated": false });
+    navigate("/login", { replace: true });
+  }, [queryClient, setUser, navigate]);
+  return <LoadingIndicator />
 }
 
 function RegisterandLogout() {
@@ -87,6 +99,13 @@ function App() {
             </ProtectedRoute>
           </Suspense>
         } />
+        <Route path="applications" element={
+          <Suspense fallback={<LoadingIndicator size="15rem" />}>
+            <ProtectedRoute>
+              <UserApplications />
+            </ProtectedRoute>
+          </Suspense>
+        } />
         <Route path="onboarding" element={
           <Suspense fallback={<LoadingIndicator size="15rem" />}>
             <ProtectedRoute>
@@ -111,15 +130,13 @@ function App() {
             <Login />
           </Suspense>
         } />
+        <Route path="logout" element={<Logout />} />
         <Route path="*" element={
           <Suspense fallback={<LoadingIndicator size="15rem" />}>
             <NotFound />
           </Suspense>
         } />
       </Route>
-      <Route path="logout" element={
-        <Logout />
-      } />
       <Route path="register" element={
         <RegisterandLogout />
       } />

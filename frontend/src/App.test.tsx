@@ -137,7 +137,35 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Upcoming Events" })).toBeInTheDocument();
     expect(api.post).toHaveBeenCalledWith("/api/token/", { username: "john", password: "s3cret" });
     expect(localStorage.getItem(ACCESS_TOKEN)).toBe(access);
-    expect(screen.getByRole("link", { name: "Profile" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Log in/ })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "John" }));
+    expect(screen.getByRole("link", { name: "Profile" })).toHaveAttribute("href", "/profile");
+  });
+
+  it("offers the profile, the applications and the logout in the account menu", async () => {
+    logIn();
+    renderApp("/events/");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "John" }));
+    expect(screen.getByText("John Doe")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "My applications" })).toHaveAttribute("href", "/applications");
+
+    await user.click(screen.getByRole("link", { name: "My applications" }));
+    expect(await screen.findByRole("heading", { name: "My Applications" })).toBeInTheDocument();
+    expect(await screen.findByText("You have not applied for any upcoming competition.")).toBeInTheDocument();
+    // The profile no longer lists the applications.
+    await user.click(screen.getByRole("button", { name: "John" }));
+    await user.click(screen.getByRole("link", { name: "Profile" }));
+    expect(await screen.findByRole("heading", { name: "User Profile" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Examinations" })).toBeInTheDocument();
+    expect(screen.queryByRole("searchbox", { name: "Search applications" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "John" }));
+    await user.click(screen.getByRole("link", { name: "Log out" }));
+    expect(await screen.findByRole("heading", { name: "Login" })).toBeInTheDocument();
+    expect(localStorage.getItem(ACCESS_TOKEN)).toBeNull();
+    expect(screen.queryByRole("button", { name: "John" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Log in/ })).toBeInTheDocument();
   });
 
   it("lists and filters upcoming events", async () => {
@@ -843,7 +871,7 @@ describe("App", () => {
     };
     try {
       logIn();
-      renderApp("/profile");
+      renderApp("/applications");
       const user = userEvent.setup();
       // Only the invited application has the eye.
       const [eye, ...others] = await screen.findAllByRole("button", { name: "Show the invitation" });

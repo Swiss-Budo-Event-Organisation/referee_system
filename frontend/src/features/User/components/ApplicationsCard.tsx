@@ -45,7 +45,6 @@ function ApplicationsList({ user }: { user: number }) {
     const term = search.trim();
     const total = pages?.[0]?.count ?? 0;
     return <>
-        <h2 className="mt-5">Applications</h2>
         <InputGroup className="mb-3">
             <InputGroup.Text><i className="bi bi-search" aria-hidden="true" /></InputGroup.Text>
             <Form.Control

@@ -7,7 +7,6 @@ import { useAddressQuery } from "../../../hooks/useQueries"
 import { createPersonalAddress, updateAddress } from "../../../lib/requests"
 import { AddressType } from "../../../lib/types"
 import { canApproveAccounts, useProfileQuery } from "../hooks/useUserQueries"
-import ApplicationsList from "./ApplicationsCard"
 import ExaminationCard from "./ExaminationCard"
 import ProfileSection, { SectionField, SectionValues } from "./ProfileSection"
 import EmailStatus from "../../Accounts/components/EmailStatus"
@@ -154,7 +153,6 @@ function ProfilePage({ pk }: { pk: number }) {
                         onSave={(values) => save({ account: values })} />
                 )}
                 <ExaminationCard user={data.id} />
-                <ApplicationsList user={data.id} />
             </Stack>
         </>
     )
