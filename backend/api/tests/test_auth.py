@@ -4,6 +4,8 @@ import jwt
 from allauth.mfa.models import Authenticator
 from allauth.mfa.totp.internal import auth as totp_auth
 from allauth.mfa.utils import decrypt
+from cryptography.fernet import Fernet
+from cryptography.fernet import InvalidToken
 from django.contrib.auth.hashers import get_hasher
 from django.contrib.auth.hashers import identify_hasher
 from django.contrib.auth.models import User
@@ -12,6 +14,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from accounts.adapter import fallback_key
 from api.tests.helpers import make_user
 
 APP = "/_allauth/app/v1"
@@ -157,6 +160,14 @@ class TestLogin(AllauthClient):
         response = self.client.get(reverse("event-list"))
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_passkeys_are_bound_to_the_configured_domain(self):
+        url = f"{APP}/auth/webauthn/login"
+        options = self.client.get(url).json()["data"]["request_options"]
+        self.assertEqual(options["publicKey"]["rpId"], "testserver")
+        with self.settings(MFA_WEBAUTHN_RP_ID="referee.example.ch"):
+            options = self.client.get(url).json()["data"]["request_options"]
+        self.assertEqual(options["publicKey"]["rpId"], "referee.example.ch")
+
     def test_old_simplejwt_routes_are_gone(self):
         response = self.client.post("/api/token/", {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -203,8 +214,23 @@ class TestTOTP(AllauthClient):
         )
 
     def test_secret_is_stored_encrypted(self):
-        authenticator = Authenticator.objects.get(user=self.user, type="totp")
-        self.assertEqual(decrypt(authenticator.data["secret"]), self.secret)
+        stored = Authenticator.objects.get(user=self.user, type="totp").data["secret"]
+        self.assertNotIn(self.secret, stored)
+        self.assertEqual(decrypt(stored), self.secret)
+
+    def test_recovery_code_seed_is_stored_encrypted(self):
+        stored = Authenticator.objects.get(user=self.user, type="recovery_codes")
+        seed = decrypt(stored.data["seed"])
+        self.assertNotIn(seed, str(stored.data))
+
+    def test_a_new_key_still_decrypts_with_the_old_one(self):
+        stored = Authenticator.objects.get(user=self.user, type="totp").data["secret"]
+        with self.settings(MFA_ENCRYPTION_KEYS=[Fernet.generate_key().decode()]):
+            with self.assertRaises(InvalidToken):
+                decrypt(stored)
+        old = fallback_key()
+        with self.settings(MFA_ENCRYPTION_KEYS=[Fernet.generate_key().decode(), old]):
+            self.assertEqual(decrypt(stored), self.secret)
 
     def test_login_asks_for_the_second_factor(self):
         response = self.login()

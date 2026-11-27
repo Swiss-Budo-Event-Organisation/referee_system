@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 
+from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.conf import settings
@@ -26,6 +27,8 @@ def pem_one_line() -> str:
 
 PRODUCTION_ENV = {
     "JWT_PRIVATE_KEY": pem_one_line(),
+    "MFA_ENCRYPTION_KEYS": f"{Fernet.generate_key().decode()},"
+    f"{Fernet.generate_key().decode()}",
     "DJANGO_SETTINGS_MODULE": "ref_sys.settings.production",
     "SECRET_KEY": "x7Qp2LmZ9vR4tY8wK3nB6cF1hJ5dG0sA-uE_iO2pL9kM4nB7vC3xZ",
     "DOMAIN": "referee.example.ch",
@@ -121,8 +124,52 @@ class TestProductionSettings(SimpleTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip().splitlines()[-1], "RS256 RSA False")
 
+    def test_missing_mfa_encryption_keys_fail(self):
+        result = run_manage("check", **{**PRODUCTION_ENV, "MFA_ENCRYPTION_KEYS": ""})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("MFA_ENCRYPTION_KEYS must be set in .env.prod", result.stderr)
+
+    def test_second_factor_settings(self):
+        result = run_manage("shell", "-c", PRINT_MFA_SETTINGS, **PRODUCTION_ENV)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout.strip().splitlines()[-1],
+            "False referee.example.ch 2 "
+            "django.core.cache.backends.redis.RedisCache redis://redis:6379/1",
+        )
+
+
+PRINT_MFA_SETTINGS = (
+    "from django.conf import settings as s; "
+    "print(s.MFA_WEBAUTHN_ALLOW_INSECURE_ORIGIN, s.MFA_WEBAUTHN_RP_ID, "
+    "len(s.MFA_ENCRYPTION_KEYS), s.CACHES['default']['BACKEND'], "
+    "s.CACHES['default']['LOCATION'])"
+)
+
 
 class TestLocalSettings(SimpleTestCase):
+    def test_passkeys_over_http(self):
+        result = run_manage(
+            "shell",
+            "-c",
+            "print(settings.MFA_WEBAUTHN_ALLOW_INSECURE_ORIGIN)",
+            DJANGO_SETTINGS_MODULE="ref_sys.settings.local",
+            DATABASE_URL="sqlite:///:memory:",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip().splitlines()[-1], "True")
+
+    def test_deploy_checks_reject_the_local_settings(self):
+        result = run_manage(
+            "check",
+            "--deploy",
+            DJANGO_SETTINGS_MODULE="ref_sys.settings.local",
+            DATABASE_URL="sqlite:///:memory:",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        for code in ("E001", "E003", "E004", "E005"):
+            self.assertIn(f"accounts.{code}", result.stderr)
+
     def test_debug_toolbar_and_console_mail(self):
         result = run_manage(
             "shell",

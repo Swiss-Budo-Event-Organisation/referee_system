@@ -35,6 +35,24 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[DOMAIN])
 CSRF_TRUSTED_ORIGINS = [f"https://{host}" for host in ALLOWED_HOSTS]
 FRONTEND_URL = env.str("FRONTEND_URL", default=f"https://{DOMAIN}").rstrip("/")
 
+# Second factors. Passkeys are bound to the public domain and only accepted
+# from https origins; secrets are encrypted with keys of their own.
+MFA_WEBAUTHN_ALLOW_INSECURE_ORIGIN = False
+MFA_WEBAUTHN_RP_ID = env.str("WEBAUTHN_RP_ID", default=DOMAIN)
+MFA_ENCRYPTION_KEYS = [
+    key.strip() for key in required("MFA_ENCRYPTION_KEYS").split(",") if key.strip()
+]
+
+# A cache shared by all workers: allauth keeps its rate limits (login,
+# failed logins, codes) and the used TOTP codes there, so a code cannot be
+# replayed on another worker.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env.str("CACHE_URL", default="redis://redis:6379/1"),
+    }
+}
+
 # Database
 DATABASES = database_config()
 DATABASES["default"]["CONN_MAX_AGE"] = env.int("CONN_MAX_AGE", default=60)

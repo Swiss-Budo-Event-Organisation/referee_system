@@ -81,6 +81,16 @@ MFA_TOTP_ISSUER = "Referee System"
 # allauth only lets users with a verified address add a factor. Addresses
 # are confirmed by the accounts app instead, which allauth does not know of.
 MFA_ALLOW_UNVERIFIED_EMAIL = True
+MFA_ADAPTER = "accounts.adapter.MFAAdapter"
+# Passkeys and security keys only from https origins. The local and test
+# settings allow plain http; `check --deploy` rejects that.
+MFA_WEBAUTHN_ALLOW_INSECURE_ORIGIN = False
+# The domain passkeys are bound to. Empty: the host of each request, which is
+# fine for development only.
+MFA_WEBAUTHN_RP_ID = ""
+# Fernet keys that encrypt TOTP secrets and recovery code seeds, newest
+# first. Empty: a key derived from SECRET_KEY (development and tests).
+MFA_ENCRYPTION_KEYS: list[str] = []
 
 # Application definition
 
