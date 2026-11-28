@@ -1,18 +1,11 @@
-import { createContext, Suspense, useState } from "react";
+import { Suspense, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 import { ThemeLiteral, UserType } from "../lib/types";
+import { UserContext } from "./UserContext";
 import { getUser } from "../lib/auth";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
-
-type ContextProp = {
-    user: UserType;
-    setUser: CallableFunction;
-    theme: string;
-    toggleTheme: CallableFunction;
-}
-export const UserContext = createContext<ContextProp>({ "user": {}, "setUser": () => { }, "theme": "light", "toggleTheme": () => { } });
 
 function MainLayout() {
     const preferesDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -26,7 +19,7 @@ function MainLayout() {
     const id = getUser();
     const [user, setUser] = useState<UserType>({ id, "isAuthenticated": id !== undefined });
     const [theme, setTheme] = useState<string>(selectedTheme || defaultTheme);
-    function toggleTheme(_event: MouseEvent): void {
+    function toggleTheme(): void {
         setTheme((prev) => {
             const next: ThemeLiteral = (prev === "light") ? "dark" : "light"
             document.documentElement.setAttribute("data-bs-theme", next);

@@ -2,7 +2,7 @@ import { ReactNode, useContext, useEffect } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { validToken } from "../lib/auth";
 import LoadingIndicator from "./LoadingIndicator";
-import { UserContext } from "../layouts/MainLayout";
+import { UserContext } from "../layouts/UserContext";
 import { useProfileQuery } from "../features/User/hooks/useUserQueries";
 
 /**

@@ -285,7 +285,9 @@ def invitation_mails(invitation: Invitation) -> list[mail.EmailMessage]:
     """
     sender = invitation.sender
     reply_to = [sender.email] if sender is not None and sender.email else []
-    recipients = [(r.name, r.user.email) for r in invited_referees(invitation)]
+    recipients: list[tuple[str | None, str]] = [
+        (r.name, r.user.email) for r in invited_referees(invitation)
+    ]
     users = list(invitation.send_copy.all())
     if sender is not None:
         users.insert(0, sender)

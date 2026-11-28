@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from django.contrib.auth.models import Group
 from django.contrib.auth.models import User
 from django.core.validators import MaxValueValidator
@@ -91,7 +93,7 @@ class Event(models.Model):
         )
 
     @classmethod
-    def create(cls, name: str, start: timezone.datetime, **kwargs):
+    def create(cls, name: str, start: datetime, **kwargs):
         slug = kwargs.pop("slug", None) or slugify(name)
         qs = Event.objects.filter(slug=slug).filter(start__year=start.year)
         if qs.count() > 0:
@@ -179,7 +181,7 @@ class Competition(models.Model):
         return f"{self.event.name} ({self.start.date()})"
 
     @property
-    def registration_closes(self) -> timezone.datetime:
+    def registration_closes(self) -> datetime:
         """
         End of the registration period: the closing date if one is set,
         otherwise the start of the competition.

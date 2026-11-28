@@ -2,7 +2,7 @@ import { FormEvent, useContext, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Alert, Button, Col, Form, Row } from "react-bootstrap";
 import LoadingIndicator from "../../../components/LoadingIndicator";
-import { UserContext } from "../../../layouts/MainLayout";
+import { UserContext } from "../../../layouts/UserContext";
 import {
     AllauthResponse,
     errorMessage,

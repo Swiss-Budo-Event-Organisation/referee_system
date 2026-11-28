@@ -1,6 +1,6 @@
 import { Navigate, useSearchParams } from "react-router-dom"
 import { useContext, useEffect } from "react";
-import { UserContext } from "../layouts/MainLayout";
+import { UserContext } from "../layouts/UserContext";
 import { getUser } from "../lib/auth";
 import LoginForm from "../features/Auth/components/LoginForm";
 

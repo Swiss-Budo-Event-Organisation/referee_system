@@ -121,19 +121,19 @@ class Category(models.Model):
     def __str__(self) -> str:
         return self.name
 
-    def __lt__(self, other: any) -> bool:
+    def __lt__(self, other: object) -> bool:
         return self.is_child_of(other)
 
-    def __gt__(self, other: any) -> bool:
+    def __gt__(self, other: object) -> bool:
         return self.is_parent_of(other)
 
-    def __le__(self, other: any) -> bool:
+    def __le__(self, other: object) -> bool:
         return self < other or self == other
 
-    def __ge__(self, other: any) -> bool:
+    def __ge__(self, other: object) -> bool:
         return self > other or self == other
 
-    def is_parent_of(self, other: any) -> bool:
+    def is_parent_of(self, other: object) -> bool:
         if not isinstance(other, Category):
             raise TypeError(
                 f"{other} is of type {type(other)} which cannot be compared with "
@@ -145,7 +145,7 @@ class Category(models.Model):
             return True
         return self.is_parent_of(other.parent)
 
-    def is_child_of(self, other: any) -> bool:
+    def is_child_of(self, other: object) -> bool:
         if not isinstance(other, Category):
             raise TypeError(
                 f"{other} is of type {type(other)} which cannot be compared with "

@@ -1,7 +1,7 @@
 import { useContext } from "react";
 import NotFound from "./NotFound";
 import ProfilePage from "../features/User/components/ProfilePage";
-import { UserContext } from "../layouts/MainLayout";
+import { UserContext } from "../layouts/UserContext";
 
 function UserProfile() {
     const { user } = useContext(UserContext);

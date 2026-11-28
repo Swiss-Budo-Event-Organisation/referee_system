@@ -1,7 +1,7 @@
 import { useContext } from "react";
 import NotFound from "./NotFound";
 import ApplicationsList from "../features/User/components/ApplicationsCard";
-import { UserContext } from "../layouts/MainLayout";
+import { UserContext } from "../layouts/UserContext";
 
 function UserApplications() {
     const { user } = useContext(UserContext);
