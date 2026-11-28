@@ -1,3 +1,4 @@
+from datetime import datetime
 from time import sleep
 
 from django.test import TestCase
@@ -15,21 +16,15 @@ class TestEventModel(TestCase):
         self.event1 = Event.create(
             name="Test Event",
             location=self.location,
-            start=timezone.datetime(
-                2024, 12, 1, 8, 30, tzinfo=timezone.get_current_timezone()
-            ),
+            start=datetime(2024, 12, 1, 8, 30, tzinfo=timezone.get_current_timezone()),
         )
         self.assertIsInstance(self.event1, Event)
         self.assertEqual(self.event1.slug, "test-event")
         self.event2 = Event.create(
             name="Test Event",
             location=self.location,
-            start=timezone.datetime(
-                2024, 12, 10, 9, 32, tzinfo=timezone.get_current_timezone()
-            ),
-            end=timezone.datetime(
-                2024, 12, 10, 18, 32, tzinfo=timezone.get_current_timezone()
-            ),
+            start=datetime(2024, 12, 10, 9, 32, tzinfo=timezone.get_current_timezone()),
+            end=datetime(2024, 12, 10, 18, 32, tzinfo=timezone.get_current_timezone()),
         )
         self.assertIsInstance(self.event2, Event)
         self.assertEqual(self.event2.slug, "test-event-1")

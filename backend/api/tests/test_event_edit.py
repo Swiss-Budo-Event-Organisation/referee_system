@@ -297,7 +297,7 @@ class TestRemoveEventApplications(EventEditTestCase):
             user=make_user("jane").referee, competition=self.day1
         )
 
-    def url(self, application=None, event=None):
+    def url(self, event=None, application=None):
         return reverse(
             "event-application-detail",
             args=[(event or self.event).pk, (application or self.application).pk],

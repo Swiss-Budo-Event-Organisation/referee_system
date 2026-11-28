@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -504,7 +506,7 @@ class DeleteApplicationView(generics.DestroyAPIView):
         )
 
     def perform_destroy(self, instance):
-        if timezone.now() - instance.created < timezone.timedelta(minutes=30):
+        if timezone.now() - instance.created < timedelta(minutes=30):
             return super().perform_destroy(instance)
         instance.status = Application.Status.CANCELLED
         instance.save()

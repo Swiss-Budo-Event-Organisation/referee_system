@@ -4,11 +4,8 @@ import { type EventType } from "../../../lib/types"
 import { formattedDateRange } from "../../../lib/helper"
 import { useAddressQuery } from "../../../hooks/useQueries"
 
-function openDetail(id: number) {
-    const navigate = useNavigate()
-    return () => navigate(`/events/${id}`);
-}
 function EventCard({ event }: { event: EventType }) {
+    const navigate = useNavigate();
     const addressQuery = useAddressQuery(event.location.address);
     return (
         <Col>
@@ -24,7 +21,7 @@ function EventCard({ event }: { event: EventType }) {
                 <Card.Body>
                     <Card.Title>{event.name}</Card.Title>
                     <Card.Text>{event.info}</Card.Text>
-                    <Button variant="primary" onClick={openDetail(event.id)}>Details</Button>
+                    <Button variant="primary" onClick={() => navigate(`/events/${event.id}`)}>Details</Button>
                 </Card.Body>
             </Card>
         </Col>

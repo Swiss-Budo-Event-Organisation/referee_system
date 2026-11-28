@@ -2,7 +2,7 @@ import { lazy, Suspense, useContext, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Route, Navigate, createBrowserRouter, createRoutesFromElements, RouterProvider, useNavigate } from "react-router-dom";
 import LoadingIndicator from "./components/LoadingIndicator";
-import { UserContext } from "./layouts/MainLayout";
+import { UserContext } from "./layouts/UserContext";
 import { logout } from "./lib/allauth";
 import { clearTokens } from "./lib/auth";
 

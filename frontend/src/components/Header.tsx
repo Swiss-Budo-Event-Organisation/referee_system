@@ -2,7 +2,7 @@ import { ReactNode, useContext } from "react";
 import { Container, Nav, Navbar, NavDropdown } from "react-bootstrap";
 import { Link, useLocation } from "react-router-dom";
 import ThemeToggle from "./ThemeToggle";
-import { UserContext } from "../layouts/MainLayout";
+import { UserContext } from "../layouts/UserContext";
 import { useCanViewPendingAccounts, useHasPermission, useProfileQuery } from "../features/User/hooks/useUserQueries";
 
 /** Whether the path lies at or below the given one, ignoring a trailing slash. */

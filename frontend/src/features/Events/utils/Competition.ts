@@ -1,4 +1,3 @@
-import { MouseEvent } from "react";
 import { toast } from "react-toastify";
 import api, { getRequest } from "../../../lib/api";
 import { getUser } from "../../../lib/auth";
@@ -21,7 +20,7 @@ export function registrationClosedReason(competition: CompetitionType, now: Date
 }
 
 export function handleApply(id: number) {
-    return async function handlerFunction(_event: MouseEvent) {
+    return async function handlerFunction() {
         api.post("/api/applications/", { "competition": id, "user": getUser() })
             .then((res) => {
                 if (res.status === 201) {
@@ -30,7 +29,7 @@ export function handleApply(id: number) {
             })
             .catch((error) => {
                 if (error.status === 400) {
-                    for (const [_key, value] of Object.entries(error.response?.data)) {
+                    for (const value of Object.values(error.response?.data ?? {})) {
                         toast.error(String(value));
                     }
                 } else if (error.status === 403) {

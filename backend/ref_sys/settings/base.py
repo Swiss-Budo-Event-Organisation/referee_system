@@ -156,6 +156,7 @@ WSGI_APPLICATION = "ref_sys.wsgi.application"
 
 def database_config():
     """DATABASE_URL if set, otherwise the POSTGRES_* variables."""
+    database: dict[str, object]
     if os.getenv("DATABASE_URL"):
         database = env.db("DATABASE_URL")
     else:
